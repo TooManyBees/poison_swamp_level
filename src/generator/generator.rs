@@ -1,6 +1,7 @@
 use crate::generator::ParseState;
 use rand::{Rng, seq::IndexedRandom};
 use std::collections::HashMap;
+use std::fmt;
 use std::fs::File;
 use std::io;
 use std::io::Read;
@@ -38,7 +39,7 @@ impl Generator {
 
         let mut parse_state = ParseState::default();
         for (start, end) in regions {
-            parse_state.read(&mut &text[start..end]);
+            parse_state.read(&text[start..end]);
         }
 
         let (text, map) = parse_state.finish();
@@ -73,6 +74,15 @@ pub enum ReadGeneratorError {
 impl From<io::Error> for ReadGeneratorError {
     fn from(e: io::Error) -> ReadGeneratorError {
         ReadGeneratorError::Io(e)
+    }
+}
+
+impl fmt::Display for ReadGeneratorError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            ReadGeneratorError::Io(e) => e.fmt(f),
+            ReadGeneratorError::NoContent => write!(f, "The generator did not find any content."),
+        }
     }
 }
 

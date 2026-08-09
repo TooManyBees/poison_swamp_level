@@ -30,7 +30,8 @@ impl<'a> ParseState<'a> {
         }
     }
 
-    pub fn finish(self) -> (String, HashMap<State, Vec<Substring>>) {
+    pub fn finish(mut self) -> (String, HashMap<State, Vec<Substring>>) {
+        self.compressed.shrink_to_fit();
         (self.compressed, self.map)
     }
 }
