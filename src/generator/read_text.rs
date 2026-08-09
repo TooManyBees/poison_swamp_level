@@ -41,11 +41,11 @@ struct ParseState<'a> {
 }
 
 impl<'a> ParseState<'a> {
-    fn intern(&mut self, substring: Substring, text: &'a str) -> Substring {
-        *self.interned.entry(substring.of(text)).or_insert_with(|| {
+    fn intern(&mut self, substring: &'a str) -> Substring {
+        *self.interned.entry(substring).or_insert_with(|| {
             let start = self.compressed.len();
-            let end = start + substring.1 - substring.0;
-            self.compressed.push_str(substring.of(text));
+            let end = start + substring.len();
+            self.compressed.push_str(substring);
             Substring(start, end)
         })
     }
@@ -54,9 +54,9 @@ impl<'a> ParseState<'a> {
         let iter = Substrings::new(text);
 
         for (prev1, prev2, next) in iter.windows() {
-            let prev1 = self.intern(prev1, text);
-            let prev2 = self.intern(prev2, text);
-            let next = self.intern(next, text);
+            let prev1 = self.intern(prev1);
+            let prev2 = self.intern(prev2);
+            let next = self.intern(next);
             self.map.entry((prev1, prev2)).or_default().push(next);
         }
     }
@@ -76,12 +76,14 @@ impl<'a> ParseState<'a> {
 }
 
 struct Substrings<'a> {
+    source: &'a str,
     inner: CharIndices<'a>,
 }
 
 impl<'a> Substrings<'a> {
     fn new(s: &'a str) -> Self {
         Substrings {
+            source: s,
             inner: s.char_indices(),
         }
     }
@@ -92,7 +94,7 @@ impl<'a> Substrings<'a> {
 }
 
 impl<'a> Iterator for Substrings<'a> {
-    type Item = Substring;
+    type Item = &'a str;
 
     fn next(&mut self) -> Option<Self::Item> {
         let a = loop {
@@ -115,7 +117,7 @@ impl<'a> Iterator for Substrings<'a> {
             }
         };
 
-        Some(Substring(a, b))
+        Some(&self.source[a..b])
     }
 }
 
@@ -146,13 +148,13 @@ impl WindowState {
 
 struct SubstringsWindows<'a> {
     inner: Substrings<'a>,
-    window: [Substring; 3],
+    window: [&'a str; 3],
     state: WindowState,
 }
 
 impl<'a> SubstringsWindows<'a> {
     fn new(mut inner: Substrings<'a>) -> Self {
-        let mut window = [Substring(0, 0); 3];
+        let mut window = [""; 3];
         window[0] = inner.next().unwrap_or_default();
         window[1] = inner.next().unwrap_or_default();
 
@@ -165,7 +167,7 @@ impl<'a> SubstringsWindows<'a> {
 }
 
 impl<'a> Iterator for SubstringsWindows<'a> {
-    type Item = (Substring, Substring, Substring);
+    type Item = (&'a str, &'a str, &'a str);
 
     fn next(&mut self) -> Option<Self::Item> {
         self.window[self.state.as_index()] = self.inner.next()?;
@@ -209,29 +211,15 @@ mod test {
     fn substrings_parses_words() {
         let text = "this is some text";
         let substrings = Substrings::new(text).collect::<Vec<_>>();
-        assert_eq!(
-            substrings,
-            vec!(
-                Substring(0, 4),
-                Substring(5, 7),
-                Substring(8, 12),
-                Substring(13, 17)
-            )
-        );
+        assert_eq!(substrings, vec!("this", "is", "some", "text"));
     }
 
     #[test]
     fn substrings_windows() {
         let text = "this is some text";
         let mut windows = Substrings::new(text).windows();
-        assert_eq!(
-            windows.next(),
-            Some((Substring(0, 4), Substring(5, 7), Substring(8, 12)))
-        );
-        assert_eq!(
-            windows.next(),
-            Some((Substring(5, 7), Substring(8, 12), Substring(13, 17)))
-        );
+        assert_eq!(windows.next(), Some(("this", "is", "some")));
+        assert_eq!(windows.next(), Some(("is", "some", "text")));
         assert_eq!(windows.next(), None);
     }
 
