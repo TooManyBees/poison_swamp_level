@@ -5,5 +5,5 @@ fn main() {
     let g = Corpus::from_files(&vec!["./susan.sontag.notes.on.camp.txt"]).unwrap();
     let mut gg = g.generate(&mut rng);
 
-    println!("{}", gg.sentence(12));
+    println!("{}", gg.sentence(10..=20));
 }

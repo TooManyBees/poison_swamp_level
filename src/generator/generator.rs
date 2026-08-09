@@ -1,7 +1,11 @@
 use crate::generator::{ParseError, read, read_from_files, read_from_strings};
-use rand::{Rng, seq::IndexedRandom};
+use rand::{
+    Rng,
+    seq::{IndexedRandom, IteratorRandom},
+};
 use std::borrow::Cow;
 use std::collections::HashMap;
+use std::ops::RangeInclusive;
 
 pub struct Corpus {
     text: String,
@@ -82,12 +86,17 @@ impl<'a, R: Rng> Iterator for Generator<'a, R> {
 }
 
 impl<'a, R: Rng> Generator<'a, R> {
-    pub fn sentence(&mut self, length: usize) -> String {
+    pub fn sentence(&mut self, range: RangeInclusive<usize>) -> String {
         let mut output = String::new();
 
-        if length > 0 {
+        let num_words = match range.choose(&mut self.rng) {
+            Some(n) => n,
+            None => return output,
+        };
+
+        if num_words > 0 {
             output.push_str(capitalized(self.next().unwrap()).as_ref());
-            for word in self.take(length - 1) {
+            for word in self.take(num_words - 1) {
                 output.push(' ');
                 output.push_str(word);
             }
