@@ -85,6 +85,21 @@ impl<'a, R: Rng> Iterator for Generator<'a, R> {
     }
 }
 
+static SENTENCE_ENDINGS: &'static [&'static str] =
+    &[".", "!", "?", ".\"", "!\"", "?\"", ".”", "!”", "?”"];
+
+fn is_ending<S: AsRef<str>>(s: S) -> bool {
+    if s.as_ref().is_empty() {
+        return true;
+    }
+    for ending in SENTENCE_ENDINGS {
+        if s.as_ref().ends_with(ending) {
+            return true;
+        }
+    }
+    false
+}
+
 pub static JOIN_BEFORE: &'static [char] = &['!', '"', ')', ',', '.', ':', ';', '?', '”'];
 pub static JOIN_AFTER: &'static [char] = &['(', '“'];
 
@@ -106,22 +121,26 @@ impl<'a, R: Rng> Generator<'a, R> {
         };
 
         if num_words > 0 {
-            output.push_str(capitalized(self.next().unwrap()).as_ref());
-            for word in self.take(num_words - 1) {
-                if whitespace_before_word(word) && whitespace_after_output(&output) {
+            for word in self.take(num_words) {
+                let word = if is_ending(&output) {
+                    capitalized(word)
+                } else {
+                    Cow::Borrowed(word)
+                };
+
+                if !output.is_empty()
+                    && whitespace_before_word(&word)
+                    && whitespace_after_output(&output)
+                {
                     output.push(' ');
                 }
-                output.push_str(word);
+                output.push_str(&word);
             }
         }
 
-        for ending in [".", "!", "?", ".\"", "!\"", "?\"", ".”", "!”", "?”"] {
-            if output.ends_with(ending) {
-                return output;
-            }
+        if !is_ending(&output) {
+            output.push('.');
         }
-
-        output.push('.');
         output
     }
 }
