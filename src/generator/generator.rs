@@ -85,6 +85,17 @@ impl<'a, R: Rng> Iterator for Generator<'a, R> {
     }
 }
 
+pub static JOIN_BEFORE: &'static [char] = &['!', '"', ')', ',', '.', ':', ';', '?', '”'];
+pub static JOIN_AFTER: &'static [char] = &['(', '“'];
+
+fn whitespace_after_output(s: &str) -> bool {
+    !s.ends_with(JOIN_AFTER)
+}
+
+fn whitespace_before_word(s: &str) -> bool {
+    !s.starts_with(JOIN_BEFORE)
+}
+
 impl<'a, R: Rng> Generator<'a, R> {
     pub fn sentence(&mut self, range: RangeInclusive<usize>) -> String {
         let mut output = String::new();
@@ -97,7 +108,9 @@ impl<'a, R: Rng> Generator<'a, R> {
         if num_words > 0 {
             output.push_str(capitalized(self.next().unwrap()).as_ref());
             for word in self.take(num_words - 1) {
-                output.push(' ');
+                if whitespace_before_word(word) && whitespace_after_output(&output) {
+                    output.push(' ');
+                }
                 output.push_str(word);
             }
         }

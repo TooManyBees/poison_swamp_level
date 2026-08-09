@@ -1,4 +1,4 @@
-use crate::generator::{State, Substring};
+use crate::generator::{State, Substring, JOIN_BEFORE, JOIN_AFTER};
 use std::cmp::Ordering;
 use std::collections::HashMap;
 use std::iter::Peekable;
@@ -95,7 +95,7 @@ impl<'a> Substrings<'a> {
 }
 
 fn split_on_punct(c: char) -> bool {
-    c != '-' && c.is_ascii_punctuation()
+    JOIN_BEFORE.contains(&c) || JOIN_AFTER.contains(&c)
 }
 
 impl<'a> Iterator for Substrings<'a> {
