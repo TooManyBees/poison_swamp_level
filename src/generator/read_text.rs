@@ -67,7 +67,12 @@ impl<'a> ParseState<'a> {
             return Err(ParseError::NoContent);
         }
         self.compressed.shrink_to_fit();
-        let mut states: Vec<_> = self.map.keys().copied().collect();
+        let mut states: Vec<_> = self
+            .map
+            .keys()
+            .filter(|(s1, _s2)| !s1.of(&self.compressed).starts_with(JOIN_BEFORE))
+            .copied()
+            .collect();
         states.sort_by(|(a1, a2), (b1, b2)| match a1.0.cmp(&b1.0) {
             Ordering::Equal => a2.0.cmp(&b2.0),
             ord => ord,
