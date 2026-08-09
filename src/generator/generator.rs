@@ -1,5 +1,6 @@
 use crate::generator::{ParseError, read, read_from_files, read_from_strings};
 use rand::{Rng, seq::IndexedRandom};
+use std::borrow::Cow;
 use std::collections::HashMap;
 
 pub struct Generator {
@@ -77,5 +78,43 @@ impl<'a, R: Rng> Iterator for Generated<'a, R> {
         self.state = (self.state.1, *next);
 
         Some(next_word)
+    }
+}
+
+impl<'a, R: Rng> Generated<'a, R> {
+    pub fn sentence(&mut self, length: usize) -> String {
+        let mut output = String::new();
+
+        if length > 0 {
+            output.push_str(capitalized(self.next().unwrap()).as_ref());
+            for word in self.take(length - 1) {
+                output.push(' ');
+                output.push_str(word);
+            }
+        }
+
+        for ending in [".", "!", "?", ".\"", "!\"", "?\"", ".”", "!”", "?”"] {
+            if output.ends_with(ending) {
+                return output;
+            }
+        }
+
+        output.push('.');
+        output
+    }
+}
+
+fn capitalized(word: &str) -> Cow<'_, str> {
+    let first = word
+        .chars()
+        .nth(0)
+        .expect("expected word to have at least 1 character");
+    if first.is_ascii_uppercase() {
+        Cow::Borrowed(word)
+    } else {
+        let new_word = std::iter::once(first.to_ascii_uppercase())
+            .chain(word.chars().skip(1))
+            .collect();
+        Cow::Owned(new_word)
     }
 }

@@ -5,17 +5,5 @@ fn main() {
     let g = Generator::from_files(&vec!["./susan.sontag.notes.on.camp.txt"]).unwrap();
     let mut gg = g.generate(&mut rng);
 
-    println!(
-        "{} {} {} {} {} {} {} {} {} {}",
-        gg.next().unwrap(),
-        gg.next().unwrap(),
-        gg.next().unwrap(),
-        gg.next().unwrap(),
-        gg.next().unwrap(),
-        gg.next().unwrap(),
-        gg.next().unwrap(),
-        gg.next().unwrap(),
-        gg.next().unwrap(),
-        gg.next().unwrap()
-    );
+    println!("{}", gg.sentence(12));
 }
