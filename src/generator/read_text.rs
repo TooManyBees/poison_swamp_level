@@ -1,7 +1,41 @@
-use crate::generator::Substring;
+use crate::generator::{State, Substring};
+use std::collections::HashMap;
 use std::str::CharIndices;
 
-pub struct Substrings<'a> {
+#[derive(Default)]
+pub struct ParseState<'a> {
+    compressed: String,
+    map: HashMap<State, Vec<Substring>>,
+    interned: HashMap<&'a str, Substring>,
+}
+
+impl<'a> ParseState<'a> {
+    fn intern(&mut self, substring: Substring, text: &'a str) -> Substring {
+        *self.interned.entry(substring.of(text)).or_insert_with(|| {
+            let start = self.compressed.len();
+            let end = start + substring.1 - substring.0;
+            self.compressed.push_str(substring.of(text));
+            Substring(start, end)
+        })
+    }
+
+    pub fn read(&mut self, text: &'a str) {
+        let iter = Substrings::new(text);
+
+        for (prev1, prev2, next) in iter.windows() {
+            let prev1 = self.intern(prev1, text);
+            let prev2 = self.intern(prev2, text);
+            let next = self.intern(next, text);
+            self.map.entry((prev1, prev2)).or_default().push(next);
+        }
+    }
+
+    pub fn finish(self) -> (String, HashMap<State, Vec<Substring>>) {
+        (self.compressed, self.map)
+    }
+}
+
+struct Substrings<'a> {
     inner: CharIndices<'a>,
 }
 

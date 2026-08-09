@@ -1,4 +1,4 @@
-use crate::generator::Substrings;
+use crate::generator::ParseState;
 use rand::{Rng, seq::IndexedRandom};
 use std::collections::HashMap;
 use std::fs::File;
@@ -12,27 +12,19 @@ pub struct Generator {
 }
 
 impl Generator {
-    fn read(map: &mut HashMap<State, Vec<Substring>>, text: &str) {
-        let iter = Substrings::new(text);
-
-        for (prev1, prev2, next) in iter.windows() {
-            map.entry((prev1, prev2)).or_default().push(next);
-        }
-    }
-
-    pub fn from_text(text: &str) -> Result<Generator, ReadGeneratorError> {
-        let mut map = HashMap::new();
-        Generator::read(&mut map, text);
-        if map.is_empty() {
-            return Err(ReadGeneratorError::NoContent);
-        }
-        let states = map.keys().copied().collect();
-        Ok(Generator {
-            text: text.to_string(),
-            map,
-            states,
-        })
-    }
+    // pub fn from_text(text: &str) -> Result<Generator, ReadGeneratorError> {
+    //     let mut map = HashMap::new();
+    //     read(&mut map, text);
+    //     if map.is_empty() {
+    //         return Err(ReadGeneratorError::NoContent);
+    //     }
+    //     let states = map.keys().copied().collect();
+    //     Ok(Generator {
+    //         text: text.to_string(),
+    //         map,
+    //         states,
+    //     })
+    // }
 
     pub fn from_files(paths: &[&str]) -> Result<Generator, ReadGeneratorError> {
         let mut text = String::new();
@@ -44,10 +36,12 @@ impl Generator {
             regions.push((start, text.len()));
         }
 
-        let mut map = HashMap::new();
+        let mut parse_state = ParseState::default();
         for (start, end) in regions {
-            Generator::read(&mut map, &text[start..end]);
+            parse_state.read(&mut &text[start..end]);
         }
+
+        let (text, map) = parse_state.finish();
 
         if map.is_empty() {
             return Err(ReadGeneratorError::NoContent);
