@@ -1,6 +1,7 @@
 use crate::generator::{State, Substring};
 use std::cmp::Ordering;
 use std::collections::HashMap;
+use std::iter::Peekable;
 use std::str::CharIndices;
 use std::{fmt, fs::File, io, io::Read};
 
@@ -77,14 +78,14 @@ impl<'a> ParseState<'a> {
 
 struct Substrings<'a> {
     source: &'a str,
-    inner: CharIndices<'a>,
+    inner: Peekable<CharIndices<'a>>,
 }
 
 impl<'a> Substrings<'a> {
     fn new(s: &'a str) -> Self {
         Substrings {
             source: s,
-            inner: s.char_indices(),
+            inner: s.char_indices().peekable(),
         }
     }
 
@@ -97,22 +98,36 @@ impl<'a> Iterator for Substrings<'a> {
     type Item = &'a str;
 
     fn next(&mut self) -> Option<Self::Item> {
+        let mut is_punct = false;
+
         let a = loop {
             let (idx, c) = self.inner.next()?;
             if !c.is_whitespace() {
+                if c.is_ascii_punctuation() {
+                    is_punct = true;
+                }
                 break idx;
             }
         };
 
         let b = loop {
-            match self.inner.next() {
+            match self.inner.peek().copied() {
                 Some((idx, c)) => {
+                    if is_punct && !c.is_ascii_punctuation() {
+                        break idx;
+                    }
+                    if !is_punct && c.is_ascii_punctuation() {
+                        break idx;
+                    }
+
+                    self.inner.next(); // use up the peek
+
                     if c.is_whitespace() {
                         break idx;
                     }
                 }
                 None => {
-                    break self.inner.offset();
+                    break self.source.len();
                 }
             }
         };
@@ -212,6 +227,34 @@ mod test {
         let text = "this is some text";
         let substrings = Substrings::new(text).collect::<Vec<_>>();
         assert_eq!(substrings, vec!("this", "is", "some", "text"));
+    }
+
+    #[test]
+    fn substrings_splits_on_period() {
+        let text = "this is. truly. text";
+        let substrings = Substrings::new(text).collect::<Vec<_>>();
+        assert_eq!(substrings, vec!["this", "is", ".", "truly", ".", "text"]);
+    }
+
+    #[test]
+    fn substrings_splits_on_comma() {
+        let text = "this is, truly, text";
+        let substrings = Substrings::new(text).collect::<Vec<_>>();
+        assert_eq!(substrings, vec!["this", "is", ",", "truly", ",", "text"]);
+    }
+
+    #[test]
+    fn substrings_splits_on_semicolon() {
+        let text = "this is; truly; text";
+        let substrings = Substrings::new(text).collect::<Vec<_>>();
+        assert_eq!(substrings, vec!["this", "is", ";", "truly", ";", "text"]);
+    }
+
+    #[test]
+    fn substrings_splits_on_parens() {
+        let text = "this is (truly) text";
+        let substrings = Substrings::new(text).collect::<Vec<_>>();
+        assert_eq!(substrings, vec!["this", "is", "(", "truly", ")", "text"]);
     }
 
     #[test]
