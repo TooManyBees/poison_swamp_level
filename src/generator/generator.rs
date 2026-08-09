@@ -3,31 +3,31 @@ use rand::{Rng, seq::IndexedRandom};
 use std::borrow::Cow;
 use std::collections::HashMap;
 
-pub struct Generator {
+pub struct Corpus {
     text: String,
     map: HashMap<State, Vec<Substring>>,
     states: Vec<State>,
 }
 
-impl Generator {
-    pub fn from_string(text: &str) -> Result<Generator, ParseError> {
+impl Corpus {
+    pub fn from_string(text: &str) -> Result<Corpus, ParseError> {
         let (text, map, states) = read(text)?;
-        Ok(Generator { text, map, states })
+        Ok(Corpus { text, map, states })
     }
 
-    pub fn from_strings(texts: &[&str]) -> Result<Generator, ParseError> {
+    pub fn from_strings(texts: &[&str]) -> Result<Corpus, ParseError> {
         let (text, map, states) = read_from_strings(texts)?;
-        Ok(Generator { text, map, states })
+        Ok(Corpus { text, map, states })
     }
 
-    pub fn from_files(paths: &[&str]) -> Result<Generator, ParseError> {
+    pub fn from_files(paths: &[&str]) -> Result<Corpus, ParseError> {
         let (text, map, states) = read_from_files(paths)?;
-        Ok(Generator { text, map, states })
+        Ok(Corpus { text, map, states })
     }
 
-    pub fn generate<R: Rng>(&self, mut rng: R) -> Generated<'_, R> {
+    pub fn generate<R: Rng>(&self, mut rng: R) -> Generator<'_, R> {
         let state = self.states.choose(&mut rng).copied().unwrap_or_default();
-        Generated {
+        Generator {
             text: &self.text,
             map: &self.map,
             states: &self.states,
@@ -48,7 +48,7 @@ impl Substring {
     }
 }
 
-pub struct Generated<'a, R: Rng> {
+pub struct Generator<'a, R: Rng> {
     text: &'a str,
     map: &'a HashMap<State, Vec<Substring>>,
     states: &'a [State],
@@ -56,7 +56,7 @@ pub struct Generated<'a, R: Rng> {
     state: State,
 }
 
-impl<'a, R: Rng> Iterator for Generated<'a, R> {
+impl<'a, R: Rng> Iterator for Generator<'a, R> {
     type Item = &'a str;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -81,7 +81,7 @@ impl<'a, R: Rng> Iterator for Generated<'a, R> {
     }
 }
 
-impl<'a, R: Rng> Generated<'a, R> {
+impl<'a, R: Rng> Generator<'a, R> {
     pub fn sentence(&mut self, length: usize) -> String {
         let mut output = String::new();
 
