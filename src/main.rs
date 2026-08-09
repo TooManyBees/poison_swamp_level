@@ -1,6 +1,4 @@
-mod generator;
-
-use generator::Generator;
+use poison_swamp_level::Generator;
 
 fn main() {
     let mut rng = rand::rng();
@@ -8,7 +6,14 @@ fn main() {
     let mut gg = g.generate(&mut rng);
 
     println!(
-        "{} {} {}",
+        "{} {} {} {} {} {} {} {} {} {}",
+        gg.next().unwrap(),
+        gg.next().unwrap(),
+        gg.next().unwrap(),
+        gg.next().unwrap(),
+        gg.next().unwrap(),
+        gg.next().unwrap(),
+        gg.next().unwrap(),
         gg.next().unwrap(),
         gg.next().unwrap(),
         gg.next().unwrap()

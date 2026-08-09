@@ -1,9 +1,39 @@
 use crate::generator::{State, Substring};
 use std::collections::HashMap;
 use std::str::CharIndices;
+use std::{fmt, fs::File, io, io::Read};
+
+type Parsed = (String, HashMap<State, Vec<Substring>>, Vec<State>);
+
+pub fn read(text: &str) -> Result<Parsed, ParseError> {
+    let mut parse_state = ParseState::default();
+    parse_state.read(text);
+    parse_state.finish()
+}
+
+pub fn read_from_strings(texts: &[&str]) -> Result<Parsed, ParseError> {
+    let mut parse_state = ParseState::default();
+    for text in texts {
+        parse_state.read(text);
+    }
+    parse_state.finish()
+}
+
+pub fn read_from_files(paths: &[&str]) -> Result<Parsed, ParseError> {
+    let mut text = String::new();
+    let mut regions = Vec::with_capacity(paths.len());
+    for path in paths {
+        let start = text.len();
+        let mut f = File::open(path)?;
+        f.read_to_string(&mut text)?;
+        regions.push(start..text.len());
+    }
+    let files: Vec<_> = regions.into_iter().map(|range| &text[range]).collect();
+    read_from_strings(&files)
+}
 
 #[derive(Default)]
-pub struct ParseState<'a> {
+struct ParseState<'a> {
     compressed: String,
     map: HashMap<State, Vec<Substring>>,
     interned: HashMap<&'a str, Substring>,
@@ -19,7 +49,7 @@ impl<'a> ParseState<'a> {
         })
     }
 
-    pub fn read(&mut self, text: &'a str) {
+    fn read(&mut self, text: &'a str) {
         let iter = Substrings::new(text);
 
         for (prev1, prev2, next) in iter.windows() {
@@ -30,9 +60,13 @@ impl<'a> ParseState<'a> {
         }
     }
 
-    pub fn finish(mut self) -> (String, HashMap<State, Vec<Substring>>) {
+    fn finish(mut self) -> Result<Parsed, ParseError> {
+        if self.map.is_empty() {
+            return Err(ParseError::NoContent);
+        }
         self.compressed.shrink_to_fit();
-        (self.compressed, self.map)
+        let states = self.map.keys().copied().collect();
+        Ok((self.compressed, self.map, states))
     }
 }
 
@@ -41,13 +75,13 @@ struct Substrings<'a> {
 }
 
 impl<'a> Substrings<'a> {
-    pub fn new(s: &'a str) -> Self {
+    fn new(s: &'a str) -> Self {
         Substrings {
             inner: s.char_indices(),
         }
     }
 
-    pub fn windows(self) -> SubstringsWindows<'a> {
+    fn windows(self) -> SubstringsWindows<'a> {
         SubstringsWindows::new(self)
     }
 }
@@ -105,7 +139,7 @@ impl WindowState {
     }
 }
 
-pub struct SubstringsWindows<'a> {
+struct SubstringsWindows<'a> {
     inner: Substrings<'a>,
     window: [Substring; 3],
     state: WindowState,
@@ -137,6 +171,27 @@ impl<'a> Iterator for SubstringsWindows<'a> {
         };
         self.state = self.state.next();
         Some(window)
+    }
+}
+
+#[derive(Debug)]
+pub enum ParseError {
+    Io(io::Error),
+    NoContent,
+}
+
+impl From<io::Error> for ParseError {
+    fn from(e: io::Error) -> ParseError {
+        ParseError::Io(e)
+    }
+}
+
+impl fmt::Display for ParseError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            ParseError::Io(e) => e.fmt(f),
+            ParseError::NoContent => write!(f, "The generator did not find any content."),
+        }
     }
 }
 
