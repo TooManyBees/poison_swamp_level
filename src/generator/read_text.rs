@@ -1,4 +1,5 @@
 use crate::generator::{State, Substring};
+use std::cmp::Ordering;
 use std::collections::HashMap;
 use std::str::CharIndices;
 use std::{fmt, fs::File, io, io::Read};
@@ -65,7 +66,11 @@ impl<'a> ParseState<'a> {
             return Err(ParseError::NoContent);
         }
         self.compressed.shrink_to_fit();
-        let states = self.map.keys().copied().collect();
+        let mut states: Vec<_> = self.map.keys().copied().collect();
+        states.sort_by(|(a1, a2), (b1, b2)| match a1.0.cmp(&b1.0) {
+            Ordering::Equal => a2.0.cmp(&b2.0),
+            ord => ord,
+        });
         Ok((self.compressed, self.map, states))
     }
 }
@@ -197,7 +202,8 @@ impl fmt::Display for ParseError {
 
 #[cfg(test)]
 mod test {
-    use super::{Substring, Substrings};
+    use super::{Substring, Substrings, read_from_strings};
+    use std::collections::HashMap;
 
     #[test]
     fn substrings_parses_words() {
@@ -234,5 +240,43 @@ mod test {
         let text = "this is";
         let mut windows = Substrings::new(text).windows();
         assert_eq!(windows.next(), None);
+    }
+
+    #[test]
+    fn read() {
+        let texts = &["this is a string", "this is so cool", "cool beans babe"];
+        let (text, map, states) = read_from_strings(texts).unwrap();
+        assert_eq!(text, "thisisastringsocoolbeansbabe");
+        assert_eq!(
+            map,
+            HashMap::from([
+                // this is => [a, so]
+                (
+                    (Substring(0, 4), Substring(4, 6)),
+                    vec![Substring(6, 7), Substring(13, 15)]
+                ),
+                // is a => [string]
+                ((Substring(4, 6), Substring(6, 7)), vec![Substring(7, 13)]),
+                // is so => [cool]
+                (
+                    (Substring(4, 6), Substring(13, 15)),
+                    vec![Substring(15, 19)]
+                ),
+                // cool beans => [babe]
+                (
+                    (Substring(15, 19), Substring(19, 24)),
+                    vec![Substring(24, 28)]
+                ),
+            ])
+        );
+        assert_eq!(
+            states,
+            vec![
+                (Substring(0, 4), Substring(4, 6)),     // this is
+                (Substring(4, 6), Substring(6, 7)),     // is a
+                (Substring(4, 6), Substring(13, 15)),   // is so
+                (Substring(15, 19), Substring(19, 24)), // cool beans
+            ]
+        )
     }
 }
