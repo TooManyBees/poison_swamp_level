@@ -94,6 +94,10 @@ impl<'a> Substrings<'a> {
     }
 }
 
+fn split_on_punct(c: char) -> bool {
+    c != '-' && c.is_ascii_punctuation()
+}
+
 impl<'a> Iterator for Substrings<'a> {
     type Item = &'a str;
 
@@ -103,7 +107,7 @@ impl<'a> Iterator for Substrings<'a> {
         let a = loop {
             let (idx, c) = self.inner.next()?;
             if !c.is_whitespace() {
-                if c.is_ascii_punctuation() {
+                if split_on_punct(c) {
                     is_punct = true;
                 }
                 break idx;
@@ -113,10 +117,10 @@ impl<'a> Iterator for Substrings<'a> {
         let b = loop {
             match self.inner.peek().copied() {
                 Some((idx, c)) => {
-                    if is_punct && !c.is_ascii_punctuation() {
+                    if is_punct && !split_on_punct(c) {
                         break idx;
                     }
-                    if !is_punct && c.is_ascii_punctuation() {
+                    if !is_punct && split_on_punct(c) {
                         break idx;
                     }
 
@@ -255,6 +259,13 @@ mod test {
         let text = "this is (truly) text";
         let substrings = Substrings::new(text).collect::<Vec<_>>();
         assert_eq!(substrings, vec!["this", "is", "(", "truly", ")", "text"]);
+    }
+
+    #[test]
+    fn substrings_preserves_infix_hyphens() {
+        let text = "this is very-cool text";
+        let substrings = Substrings::new(text).collect::<Vec<_>>();
+        assert_eq!(substrings, vec!["this", "is", "very-cool", "text"]);
     }
 
     #[test]
