@@ -112,6 +112,10 @@ fn whitespace_before_word(s: &str) -> bool {
     !s.starts_with(JOIN_BEFORE)
 }
 
+fn is_punct(s: &str) -> bool {
+    s.chars().all(|c| char::is_ascii_punctuation(&c))
+}
+
 impl<'a, R: Rng> Generator<'a, R> {
     pub fn generate(&mut self, range: RangeInclusive<usize>) -> String {
         let mut output = String::new();
@@ -122,8 +126,15 @@ impl<'a, R: Rng> Generator<'a, R> {
         };
 
         if num_words > 0 {
-            for word in self.take(num_words) {
-                let word = if is_ending(&output) {
+            let mut must_capitalize = true;
+
+            for word in self
+                .skip_while(|w| w.starts_with(JOIN_BEFORE))
+                .take(num_words)
+            {
+                must_capitalize = (must_capitalize && is_punct(word)) || is_ending(&output);
+                let word = if must_capitalize {
+                    must_capitalize = false;
                     capitalized(word)
                 } else {
                     Cow::Borrowed(word)

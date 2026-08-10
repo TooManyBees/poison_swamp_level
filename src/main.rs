@@ -5,5 +5,7 @@ fn main() {
     let corpus = Corpus::from_files(&vec!["./susan.sontag.notes.on.camp.txt"]).unwrap();
     let mut generator = corpus.generator(&mut rng);
 
-    println!("{}", generator.generate(10..=20));
+    for _ in 0..5 {
+        println!("{}\n", generator.generate(10..=20));
+    }
 }
