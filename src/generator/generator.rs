@@ -89,11 +89,12 @@ static SENTENCE_ENDINGS: &'static [&'static str] =
     &[".", "!", "?", ".\"", "!\"", "?\"", ".”", "!”", "?”"];
 
 pub fn is_ending<S: AsRef<str>>(s: S) -> bool {
-    if s.as_ref().is_empty() {
+    let s = s.as_ref().trim();
+    if s.is_empty() {
         return true;
     }
     for ending in SENTENCE_ENDINGS {
-        if s.as_ref().ends_with(ending) {
+        if s.ends_with(ending) {
             return true;
         }
     }

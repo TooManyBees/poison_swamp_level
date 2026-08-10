@@ -42,16 +42,9 @@ struct ParseState<'a> {
     interned: HashMap<Cow<'a, str>, Substring>,
 }
 
-fn downcase<'a>(word: Capitalized<'a>) -> Cow<'a, str> {
-    match word {
-        Capitalized::Normal(w) => Cow::Owned(w.to_lowercase()),
-        Capitalized::Proper(w) => Cow::Borrowed(w),
-    }
-}
-
 impl<'a> ParseState<'a> {
     fn intern(&mut self, substring: Capitalized<'a>) -> Substring {
-        let maybe_downcase = downcase(substring);
+        let maybe_downcase = substring.downcase();
         *self
             .interned
             .entry(maybe_downcase.clone())
@@ -93,7 +86,7 @@ impl<'a> ParseState<'a> {
     }
 }
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
 enum Capitalized<'a> {
     Normal(&'a str),
     Proper(&'a str),
@@ -102,6 +95,15 @@ enum Capitalized<'a> {
 impl<'a> Default for Capitalized<'a> {
     fn default() -> Self {
         Capitalized::Normal("")
+    }
+}
+
+impl<'a> Capitalized<'a> {
+    fn downcase(self) -> Cow<'a, str> {
+        match self {
+            Capitalized::Normal(s) => Cow::Owned(s.to_lowercase()),
+            Capitalized::Proper(s) => Cow::Borrowed(s),
+        }
     }
 }
 
@@ -180,9 +182,9 @@ impl<'a> Iterator for Substrings<'a> {
             Capitalized::Normal(word)
         };
 
-        if !is_punct {
-            self.start_of_sentence = is_ending(word);
-        }
+        // Mark start of sentence for the next word if this word ends a sentence,
+        // or if we already ended a sentence and this word is just punctuation.
+        self.start_of_sentence = (self.start_of_sentence && is_punct) || is_ending(word);
 
         Some(capitalized)
     }
@@ -271,57 +273,121 @@ impl fmt::Display for ParseError {
 
 #[cfg(test)]
 mod test {
-    use super::{Substring, Substrings, read_from_strings};
+    use super::{Capitalized, Substring, Substrings, read_from_strings};
     use std::collections::HashMap;
 
     #[test]
     fn substrings_parses_words() {
         let text = "this is some text";
-        let substrings = Substrings::new(text).collect::<Vec<_>>();
+        let substrings = Substrings::new(text)
+            .map(Capitalized::downcase)
+            .collect::<Vec<_>>();
         assert_eq!(substrings, vec!("this", "is", "some", "text"));
     }
 
     #[test]
     fn substrings_splits_on_period() {
         let text = "this is. truly. text";
-        let substrings = Substrings::new(text).collect::<Vec<_>>();
+        let substrings = Substrings::new(text)
+            .map(Capitalized::downcase)
+            .collect::<Vec<_>>();
         assert_eq!(substrings, vec!["this", "is", ".", "truly", ".", "text"]);
     }
 
     #[test]
     fn substrings_splits_on_comma() {
         let text = "this is, truly, text";
-        let substrings = Substrings::new(text).collect::<Vec<_>>();
+        let substrings = Substrings::new(text)
+            .map(Capitalized::downcase)
+            .collect::<Vec<_>>();
         assert_eq!(substrings, vec!["this", "is", ",", "truly", ",", "text"]);
     }
 
     #[test]
     fn substrings_splits_on_semicolon() {
         let text = "this is; truly; text";
-        let substrings = Substrings::new(text).collect::<Vec<_>>();
+        let substrings = Substrings::new(text)
+            .map(Capitalized::downcase)
+            .collect::<Vec<_>>();
         assert_eq!(substrings, vec!["this", "is", ";", "truly", ";", "text"]);
     }
 
     #[test]
     fn substrings_splits_on_parens() {
         let text = "this is (truly) text";
-        let substrings = Substrings::new(text).collect::<Vec<_>>();
+        let substrings = Substrings::new(text)
+            .map(Capitalized::downcase)
+            .collect::<Vec<_>>();
         assert_eq!(substrings, vec!["this", "is", "(", "truly", ")", "text"]);
     }
 
     #[test]
     fn substrings_preserves_infix_hyphens() {
         let text = "this is very-cool text";
-        let substrings = Substrings::new(text).collect::<Vec<_>>();
+        let substrings = Substrings::new(text)
+            .map(Capitalized::downcase)
+            .collect::<Vec<_>>();
         assert_eq!(substrings, vec!["this", "is", "very-cool", "text"]);
+    }
+
+    #[test]
+    fn substrings_downcases_ordinary_words() {
+        let text = "This is cool. Truly it is.";
+        let substrings = Substrings::new(text)
+            .map(Capitalized::downcase)
+            .collect::<Vec<_>>();
+        assert_eq!(
+            substrings,
+            vec!["this", "is", "cool", ".", "truly", "it", "is", "."]
+        );
+    }
+
+    #[test]
+    fn substrings_preserves_capitalization_of_proper_nouns() {
+        let text = "Test-Runner, Steve, is a good man. “Great.”";
+        let substrings = Substrings::new(text)
+            .map(Capitalized::downcase)
+            .collect::<Vec<_>>();
+        assert_eq!(
+            substrings,
+            vec![
+                "Test-Runner",
+                ",",
+                "Steve",
+                ",",
+                "is",
+                "a",
+                "good",
+                "man",
+                ".",
+                "“",
+                "great",
+                ".”"
+            ]
+        );
     }
 
     #[test]
     fn substrings_windows() {
         let text = "this is some text";
         let mut windows = Substrings::new(text).windows();
-        assert_eq!(windows.next(), Some(("this", "is", "some")));
-        assert_eq!(windows.next(), Some(("is", "some", "text")));
+        // Incredibly difficult to compare to the underlying
+        assert_eq!(
+            windows.next(),
+            Some((
+                Capitalized::Normal("this"),
+                Capitalized::Normal("is"),
+                Capitalized::Normal("some")
+            ))
+        );
+        assert_eq!(
+            windows.next(),
+            Some((
+                Capitalized::Normal("is"),
+                Capitalized::Normal("some"),
+                Capitalized::Normal("text")
+            ))
+        );
         assert_eq!(windows.next(), None);
     }
 
