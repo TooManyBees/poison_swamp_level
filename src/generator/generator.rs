@@ -139,6 +139,14 @@ impl<'a, R: Rng> Generator<'a, R> {
         }
 
         if !is_ending(&output) {
+            if output
+                .chars()
+                .last()
+                .map(|c| char::is_ascii_punctuation(&c))
+                .unwrap_or(false)
+            {
+                output.pop();
+            }
             output.push('.');
         }
         output
