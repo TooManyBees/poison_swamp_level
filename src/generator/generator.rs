@@ -88,7 +88,7 @@ impl<'a, R: Rng> Iterator for Generator<'a, R> {
 static SENTENCE_ENDINGS: &'static [&'static str] =
     &[".", "!", "?", ".\"", "!\"", "?\"", ".”", "!”", "?”"];
 
-fn is_ending<S: AsRef<str>>(s: S) -> bool {
+pub fn is_ending<S: AsRef<str>>(s: S) -> bool {
     if s.as_ref().is_empty() {
         return true;
     }

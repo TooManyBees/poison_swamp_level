@@ -1,4 +1,5 @@
-use crate::generator::{State, Substring, JOIN_BEFORE, JOIN_AFTER};
+use crate::generator::{JOIN_AFTER, JOIN_BEFORE, State, Substring, is_ending};
+use std::borrow::Cow;
 use std::cmp::Ordering;
 use std::collections::HashMap;
 use std::iter::Peekable;
@@ -38,17 +39,28 @@ pub fn read_from_files(paths: &[&str]) -> Result<Parsed, ParseError> {
 struct ParseState<'a> {
     compressed: String,
     map: HashMap<State, Vec<Substring>>,
-    interned: HashMap<&'a str, Substring>,
+    interned: HashMap<Cow<'a, str>, Substring>,
+}
+
+fn downcase<'a>(word: Capitalized<'a>) -> Cow<'a, str> {
+    match word {
+        Capitalized::Normal(w) => Cow::Owned(w.to_lowercase()),
+        Capitalized::Proper(w) => Cow::Borrowed(w),
+    }
 }
 
 impl<'a> ParseState<'a> {
-    fn intern(&mut self, substring: &'a str) -> Substring {
-        *self.interned.entry(substring).or_insert_with(|| {
-            let start = self.compressed.len();
-            let end = start + substring.len();
-            self.compressed.push_str(substring);
-            Substring(start, end)
-        })
+    fn intern(&mut self, substring: Capitalized<'a>) -> Substring {
+        let maybe_downcase = downcase(substring);
+        *self
+            .interned
+            .entry(maybe_downcase.clone())
+            .or_insert_with(|| {
+                let start = self.compressed.len();
+                let end = start + maybe_downcase.len();
+                self.compressed.push_str(maybe_downcase.as_ref());
+                Substring(start, end)
+            })
     }
 
     fn read(&mut self, text: &'a str) {
@@ -81,8 +93,21 @@ impl<'a> ParseState<'a> {
     }
 }
 
+#[derive(Copy, Clone, Debug)]
+enum Capitalized<'a> {
+    Normal(&'a str),
+    Proper(&'a str),
+}
+
+impl<'a> Default for Capitalized<'a> {
+    fn default() -> Self {
+        Capitalized::Normal("")
+    }
+}
+
 struct Substrings<'a> {
     source: &'a str,
+    start_of_sentence: bool,
     inner: Peekable<CharIndices<'a>>,
 }
 
@@ -90,6 +115,7 @@ impl<'a> Substrings<'a> {
     fn new(s: &'a str) -> Self {
         Substrings {
             source: s,
+            start_of_sentence: true,
             inner: s.char_indices().peekable(),
         }
     }
@@ -104,7 +130,7 @@ fn split_on_punct(c: char) -> bool {
 }
 
 impl<'a> Iterator for Substrings<'a> {
-    type Item = &'a str;
+    type Item = Capitalized<'a>;
 
     fn next(&mut self) -> Option<Self::Item> {
         let mut is_punct = false;
@@ -141,7 +167,24 @@ impl<'a> Iterator for Substrings<'a> {
             }
         };
 
-        Some(&self.source[a..b])
+        let word = &self.source[a..b];
+
+        // Guess if word should preserve its capitalization
+        let capitalized = if word
+            .chars()
+            .skip(if self.start_of_sentence { 1 } else { 0 })
+            .any(char::is_uppercase)
+        {
+            Capitalized::Proper(word)
+        } else {
+            Capitalized::Normal(word)
+        };
+
+        if !is_punct {
+            self.start_of_sentence = is_ending(word);
+        }
+
+        Some(capitalized)
     }
 }
 
@@ -172,13 +215,13 @@ impl WindowState {
 
 struct SubstringsWindows<'a> {
     inner: Substrings<'a>,
-    window: [&'a str; 3],
+    window: [Capitalized<'a>; 3],
     state: WindowState,
 }
 
 impl<'a> SubstringsWindows<'a> {
     fn new(mut inner: Substrings<'a>) -> Self {
-        let mut window = [""; 3];
+        let mut window = [Capitalized::default(); 3];
         window[0] = inner.next().unwrap_or_default();
         window[1] = inner.next().unwrap_or_default();
 
@@ -191,7 +234,7 @@ impl<'a> SubstringsWindows<'a> {
 }
 
 impl<'a> Iterator for SubstringsWindows<'a> {
-    type Item = (&'a str, &'a str, &'a str);
+    type Item = (Capitalized<'a>, Capitalized<'a>, Capitalized<'a>);
 
     fn next(&mut self) -> Option<Self::Item> {
         self.window[self.state.as_index()] = self.inner.next()?;
