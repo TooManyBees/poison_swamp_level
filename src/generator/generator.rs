@@ -29,7 +29,7 @@ impl Corpus {
         Ok(Corpus { text, map, states })
     }
 
-    pub fn generate<R: Rng>(&self, mut rng: R) -> Generator<'_, R> {
+    pub fn generator<R: Rng>(&self, mut rng: R) -> Generator<'_, R> {
         let state = self.states.choose(&mut rng).copied().unwrap_or_default();
         Generator {
             text: &self.text,
@@ -113,7 +113,7 @@ fn whitespace_before_word(s: &str) -> bool {
 }
 
 impl<'a, R: Rng> Generator<'a, R> {
-    pub fn sentence(&mut self, range: RangeInclusive<usize>) -> String {
+    pub fn generate(&mut self, range: RangeInclusive<usize>) -> String {
         let mut output = String::new();
 
         let num_words = match range.choose(&mut self.rng) {
