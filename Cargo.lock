@@ -51,6 +51,8 @@ name = "poison_swamp_level"
 version = "0.1.0"
 dependencies = [
  "rand",
+ "rand_seeder",
+ "upon",
 ]
 
 [[package]]
@@ -75,3 +77,34 @@ name = "rand_core"
 version = "0.10.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "63b8176103e19a2643978565ca18b50549f6101881c443590420e4dc998a3c69"
+
+[[package]]
+name = "rand_seeder"
+version = "0.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "45225a2ea2a8f7b2038a32088f3cc551ff50d764ffea05525f84cbfb5ee06626"
+dependencies = [
+ "rand_core",
+]
+
+[[package]]
+name = "unicode-ident"
+version = "1.0.24"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e6e4313cd5fcd3dad5cafa179702e2b244f760991f45397d14d4ebf38247da75"
+
+[[package]]
+name = "unicode-width"
+version = "0.2.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b4ac048d71ede7ee76d585517add45da530660ef4390e49b098733c6e897f254"
+
+[[package]]
+name = "upon"
+version = "0.11.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b9c46fa694fd01d98377a882557a909f14258a0b2d453eb311cb471e32728ba8"
+dependencies = [
+ "unicode-ident",
+ "unicode-width",
+]

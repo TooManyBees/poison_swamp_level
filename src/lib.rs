@@ -1,3 +1,5 @@
+mod config;
 mod generator;
 
-pub use generator::Corpus;
+pub use config::Config;
+pub use generator::{Corpus, Garbage};
