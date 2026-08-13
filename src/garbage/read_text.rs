@@ -1,4 +1,4 @@
-use crate::generator::{JOIN_AFTER, JOIN_BEFORE, State, Substring, is_ending};
+use super::generator::{JOIN_AFTER, JOIN_BEFORE, State, Substring, is_ending};
 use std::borrow::Cow;
 use std::cmp::Ordering;
 use std::collections::HashMap;
@@ -143,6 +143,7 @@ impl<'a> Iterator for Substrings<'a> {
                 if split_on_punct(c) {
                     is_punct = true;
                 }
+                // println!("starting at char {c:?} - punct: {is_punct}");
                 break idx;
             }
         };
@@ -150,16 +151,20 @@ impl<'a> Iterator for Substrings<'a> {
         let b = loop {
             match self.inner.peek().copied() {
                 Some((idx, c)) => {
+                    // println!("checking {:?}", &self.source[a..idx]);
                     if is_punct && !split_on_punct(c) {
+                        // println!("punctuation ends at {c:?}");
                         break idx;
                     }
                     if !is_punct && split_on_punct(c) {
+                        // println!("word ends at punct {c:?}");
                         break idx;
                     }
 
                     self.inner.next(); // use up the peek
 
                     if c.is_whitespace() {
+                        // println!("word ends at whitespace");
                         break idx;
                     }
                 }

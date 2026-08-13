@@ -1,12 +1,7 @@
-mod generator;
-mod read_text;
-
+use super::generator::Corpus;
 use crate::Config;
-pub use generator::Corpus;
-use generator::{JOIN_AFTER, JOIN_BEFORE, State, Substring, is_ending};
 use rand::seq::IteratorRandom;
 use rand_seeder::{Seeder, SipRng};
-use read_text::{ParseError, read, read_from_files, read_from_strings};
 use std::collections::BTreeMap;
 use std::fs;
 use std::ops::RangeInclusive;

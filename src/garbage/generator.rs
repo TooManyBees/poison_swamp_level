@@ -1,4 +1,4 @@
-use crate::generator::{ParseError, read, read_from_files, read_from_strings};
+use super::read_text::{ParseError, read, read_from_files, read_from_strings};
 use rand::{
     Rng,
     seq::{IndexedRandom, IteratorRandom},
