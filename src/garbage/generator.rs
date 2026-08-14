@@ -6,6 +6,7 @@ use rand::{
 use std::borrow::Cow;
 use std::collections::HashMap;
 use std::ops::RangeInclusive;
+use std::path::Path;
 
 pub struct Corpus {
     text: String,
@@ -24,7 +25,7 @@ impl Corpus {
         Ok(Corpus { text, map, states })
     }
 
-    pub fn from_files(paths: &[&str]) -> Result<Corpus, ParseError> {
+    pub fn from_files<P: AsRef<Path>>(paths: &[P]) -> Result<Corpus, ParseError> {
         let (text, map, states) = read_from_files(paths)?;
         Ok(Corpus { text, map, states })
     }
@@ -117,6 +118,12 @@ fn is_punct(s: &str) -> bool {
 }
 
 impl<'a, R: Rng> Generator<'a, R> {
+    pub fn words(&mut self, range: RangeInclusive<usize>) -> impl Iterator<Item = &'a str> {
+        let num_words = range.choose(&mut self.rng).unwrap_or(0);
+        self.filter(|w| w.chars().any(|c| !c.is_ascii_punctuation()))
+            .take(num_words)
+    }
+
     pub fn generate(&mut self, range: RangeInclusive<usize>) -> String {
         let mut output = String::new();
 

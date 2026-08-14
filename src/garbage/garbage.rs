@@ -13,14 +13,14 @@ pub struct Garbage<'e> {
     template: Template<'e>,
     num_paragraphs: RangeInclusive<usize>,
     num_words: RangeInclusive<usize>,
+    num_links: RangeInclusive<usize>,
 }
 
 impl<'e> Garbage<'e> {
     pub fn new(config: &Config) -> Self {
-        let corpus_paths = vec!["./susan.sontag.notes.on.camp.txt"];
-        let template_path = "garbage.html";
-        let corpus = Corpus::from_files(&corpus_paths).unwrap();
-        let template_str = fs::read_to_string(template_path).unwrap();
+        let corpus = Corpus::from_files(&config.garbage.source_files).unwrap();
+        let template_str =
+            fs::read_to_string(config.garbage.template_file.as_ref().unwrap()).unwrap();
         let engine = Engine::new();
         let template = engine.compile(template_str).unwrap();
         Garbage {
@@ -29,6 +29,7 @@ impl<'e> Garbage<'e> {
             template,
             num_paragraphs: config.garbage.paragraphs.count(),
             num_words: config.garbage.paragraphs.num_words(),
+            num_links: config.garbage.links.count(),
         }
     }
 
@@ -42,9 +43,30 @@ impl<'e> Garbage<'e> {
             paragraphs.push(generator.generate(self.num_words.clone()));
         }
 
+        let links = if true {
+            let num_links = 3; // fixme
+            let mut links = Vec::with_capacity(num_links); // fixme
+            for _ in 0..num_links {
+                let mut path = String::new();
+                for segment in generator.words(3..=5) {
+                    path.push('/');
+                    path.push_str(segment);
+                }
+                let text = generator.generate(3..=5);
+                links.push(Value::Map(BTreeMap::from([
+                    ("path".into(), path.into()),
+                    ("text".into(), text.into()),
+                ])))
+            }
+            Value::List(links)
+        } else {
+            Value::None
+        };
+
         let data = Value::Map(BTreeMap::from([
             ("title".into(), "garbage".into()),
             ("paragraphs".into(), paragraphs.into()),
+            ("links".into(), links),
         ]));
         let renderer = self.template.render_from(&self.engine, &data);
         renderer.to_string().unwrap()

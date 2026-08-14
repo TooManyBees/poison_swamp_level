@@ -3,6 +3,7 @@ use std::borrow::Cow;
 use std::cmp::Ordering;
 use std::collections::HashMap;
 use std::iter::Peekable;
+use std::path::Path;
 use std::str::CharIndices;
 use std::{fmt, fs::File, io, io::Read};
 
@@ -22,7 +23,7 @@ pub fn read_from_strings(texts: &[&str]) -> Result<Parsed, ParseError> {
     parse_state.finish()
 }
 
-pub fn read_from_files(paths: &[&str]) -> Result<Parsed, ParseError> {
+pub fn read_from_files<P: AsRef<Path>>(paths: &[P]) -> Result<Parsed, ParseError> {
     let mut text = String::new();
     let mut regions = Vec::with_capacity(paths.len());
     for path in paths {

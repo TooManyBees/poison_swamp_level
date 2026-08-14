@@ -1,7 +1,12 @@
 use poison_swamp_level::{Config, Garbage};
 
 fn main() {
-    let config = Config::default();
+    let mut config = Config::default();
+    config
+        .garbage
+        .source_files
+        .push("./susan.sontag.notes.on.camp.txt".into());
+    config.garbage.template_file = Some("./garbage.html".into());
 
     let garbage = Garbage::new(&config);
 

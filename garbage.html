@@ -9,5 +9,14 @@
   {% for p in paragraphs -%}
   <p>{{ p }}</p>
   {% endfor %}
+
+  {%- if links -%}
+  <nav>
+    <p>See also:</p>
+    {% for l in links -%}
+    <p><a href="{{ l.path }}">{{ l.text }}</a></p>
+    {% endfor %}
+  </nav>
+  {%- endif %}
 </body>
 </html>
