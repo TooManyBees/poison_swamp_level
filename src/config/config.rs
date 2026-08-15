@@ -8,6 +8,7 @@ pub struct Config {
 #[derive(Debug, Default)]
 pub struct Garbage {
     pub source_files: Vec<String>,
+    pub words_file: Option<String>,
     pub paragraphs: Paragraphs,
     pub links: Links,
     pub template_file: Option<String>,
@@ -49,7 +50,7 @@ pub struct Links {
     max_words: usize,
     min_count: usize,
     max_count: usize,
-    separator: char,
+    pub separator: char,
 }
 
 impl Links {
