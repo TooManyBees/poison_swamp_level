@@ -1,11 +1,22 @@
-use std::ops::RangeInclusive;
+use serde::Deserialize;
+use std::{error::Error, fs::File, ops::RangeInclusive, path::Path};
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Deserialize)]
+#[serde(default)]
 pub struct Config {
     pub garbage: Garbage,
 }
 
-#[derive(Debug, Default)]
+impl Config {
+    pub fn read_from_file<P: AsRef<Path>>(path: P) -> Result<Config, Box<dyn Error>> {
+        let file = File::open(path)?;
+        let config = serde_json::from_reader(file)?;
+        Ok(config)
+    }
+}
+
+#[derive(Debug, Default, Deserialize)]
+#[serde(default)]
 pub struct Garbage {
     pub source_files: Vec<String>,
     pub words_file: Option<String>,
@@ -15,7 +26,8 @@ pub struct Garbage {
     pub poisons: Vec<String>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Deserialize)]
+#[serde(default)]
 pub struct Paragraphs {
     min_words: usize,
     max_words: usize,
@@ -44,7 +56,8 @@ impl Default for Paragraphs {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Deserialize)]
+#[serde(default)]
 pub struct Links {
     min_words: usize,
     max_words: usize,

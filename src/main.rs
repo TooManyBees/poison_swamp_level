@@ -1,14 +1,7 @@
 use poison_swamp_level::{Config, Garbage};
 
 fn main() {
-    let mut config = Config::default();
-    config
-        .garbage
-        .source_files
-        .push("./susan.sontag.notes.on.camp.txt".into());
-    config.garbage.words_file = Some("./words.txt".into());
-    config.garbage.poisons.push("perfidious".into());
-    config.garbage.template_file = Some("./garbage.html".into());
+    let config = Config::read_from_file("./config.json").unwrap();
 
     let garbage = Garbage::new(&config);
 
