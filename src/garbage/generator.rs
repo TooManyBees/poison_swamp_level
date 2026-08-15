@@ -1,8 +1,5 @@
 use super::read_text::{ParseError, read, read_from_files, read_from_strings};
-use rand::{
-    Rng,
-    seq::{IndexedRandom, IteratorRandom},
-};
+use rand::{Rng, RngExt, seq::IndexedRandom};
 use std::borrow::Cow;
 use std::collections::HashMap;
 use std::ops::RangeInclusive;
@@ -118,8 +115,21 @@ fn is_punct(s: &str) -> bool {
 }
 
 impl<'a, R: Rng> Generator<'a, R> {
+    pub fn rng(&mut self) -> &mut R {
+        &mut self.rng
+    }
+
+    pub fn paragraphs(
+        &mut self,
+        num_paragraphs: &RangeInclusive<usize>,
+        num_words: &RangeInclusive<usize>,
+    ) -> impl Iterator<Item = String> {
+        let num_paragraphs = self.rng.random_range(num_paragraphs.clone());
+        (0..num_paragraphs).map(|_| self.generate(num_words.clone()))
+    }
+
     pub fn words(&mut self, range: RangeInclusive<usize>) -> impl Iterator<Item = &'a str> {
-        let num_words = range.choose(&mut self.rng).unwrap_or(0);
+        let num_words = self.rng.random_range(range);
         self.filter(|w| w.chars().any(|c| !c.is_ascii_punctuation()))
             .take(num_words)
     }
@@ -127,10 +137,7 @@ impl<'a, R: Rng> Generator<'a, R> {
     pub fn generate(&mut self, range: RangeInclusive<usize>) -> String {
         let mut output = String::new();
 
-        let num_words = match range.choose(&mut self.rng) {
-            Some(n) => n,
-            None => return output,
-        };
+        let num_words = self.rng.random_range(range);
 
         if num_words > 0 {
             let mut must_capitalize = true;

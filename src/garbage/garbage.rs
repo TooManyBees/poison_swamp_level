@@ -1,6 +1,5 @@
 use super::generator::Corpus;
 use crate::Config;
-use rand::seq::IteratorRandom;
 use rand_seeder::{Seeder, SipRng};
 use std::collections::BTreeMap;
 use std::fs;
@@ -35,13 +34,12 @@ impl<'e> Garbage<'e> {
 
     pub fn render(&self, path: &str) -> String {
         let mut rng: SipRng = Seeder::from(path).into_rng();
-        let num_paragraphs = self.num_paragraphs.clone().choose(&mut rng).unwrap();
         let mut generator = self.corpus.generator(&mut rng);
 
-        let mut paragraphs = Vec::with_capacity(num_paragraphs);
-        for _ in 0..num_paragraphs {
-            paragraphs.push(generator.generate(self.num_words.clone()));
-        }
+        let paragraphs: Vec<_> = generator
+            .paragraphs(&self.num_paragraphs, &self.num_words)
+            .map(Value::String)
+            .collect();
 
         let links = if true {
             let num_links = 3; // fixme
@@ -64,8 +62,8 @@ impl<'e> Garbage<'e> {
         };
 
         let data = Value::Map(BTreeMap::from([
-            ("title".into(), "garbage".into()),
-            ("paragraphs".into(), paragraphs.into()),
+            ("title".into(), Value::String("garbage")),
+            ("paragraphs".into(), Value::List(paragraphs)),
             ("links".into(), links),
         ]));
         let renderer = self.template.render_from(&self.engine, &data);
