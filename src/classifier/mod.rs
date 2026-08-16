@@ -1,38 +1,72 @@
 use crate::config::Config;
 use http::Request;
 use http::header::HeaderName;
+use maxminddb::{MaxMindDbError, Reader, geoip2::Asn};
+use std::net::IpAddr;
 
 #[derive(Debug)]
 pub struct Classifier {
     poisons: Vec<String>,
     trusted_decision_header: Option<HeaderName>,
+
+    asns_db: Option<maxminddb::Reader<Vec<u8>>>,
+    unwanted_asns: Vec<u32>,
 }
 
 impl Classifier {
     pub fn new(config: &Config) -> Result<Self, ClassifierError> {
-        let trusted_decision_header = match &config.classifier.trusted_decision_header {
-            Some(header_name) => match HeaderName::from_bytes(header_name.as_bytes()) {
-                Ok(header) => Some(header),
-                Err(_) => {
-                    return Err(ClassifierError::InvalidHeader(header_name.clone()));
-                }
-            },
-            None => None,
-        };
+        let trusted_decision_header = config
+            .classifier
+            .trusted_decision_header
+            .as_ref()
+            .map(|header_name| {
+                HeaderName::from_bytes(header_name.as_bytes())
+                    .map_err(|_| ClassifierError::InvalidHeader(header_name.to_string()))
+            })
+            .transpose()?;
+
+        let asns_db = config
+            .classifier
+            .asns_db_path
+            .as_ref()
+            .map(Reader::open_readfile)
+            .transpose()?;
+
+        let unwanted_asns = config.classifier.unwanted_asns.clone();
+
+        if !unwanted_asns.is_empty() && asns_db.is_none() {
+            // TODO: warn that asns can't be looked up
+        }
+
         Ok(Classifier {
             poisons: config.poisons.clone(),
             trusted_decision_header,
+
+            asns_db,
+            unwanted_asns,
         })
     }
 
     pub fn trusted_decision<B>(&self, req: &Request<B>) -> Option<TrustedDecision> {
-        self.trusted_decision_header.as_ref()
+        self.trusted_decision_header
+            .as_ref()
             .and_then(|header| req.headers().get(header))
             .and_then(|decision| match decision.as_ref() {
                 b"valid" => Some(TrustedDecision::Valid),
                 b"spam" => Some(TrustedDecision::Spam),
                 other => None, // FIXME account for this
             })
+    }
+
+    fn asn<B>(&self, req: &Request<B>) -> Result<Option<u32>, MaxMindDbError> {
+        let remote_ip = req.extensions().get::<IpAddr>().copied();
+        if let Some((db, ip_addr)) = self.asns_db.as_ref().zip(remote_ip) {
+            return Ok(db
+                .lookup(ip_addr)?
+                .decode::<Asn>()?
+                .and_then(|asn| asn.autonomous_system_number));
+        }
+        Ok(None)
     }
 }
 
@@ -44,5 +78,16 @@ pub enum TrustedDecision {
 
 #[derive(Debug)]
 pub enum ClassifierError {
+    Io(std::io::Error),
     InvalidHeader(String),
+    MaxMindDb(MaxMindDbError),
+}
+
+impl From<MaxMindDbError> for ClassifierError {
+    fn from(e: MaxMindDbError) -> ClassifierError {
+        match e {
+            MaxMindDbError::Io(e) => ClassifierError::Io(e),
+            e => ClassifierError::MaxMindDb(e),
+        }
+    }
 }

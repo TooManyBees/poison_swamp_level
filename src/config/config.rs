@@ -22,6 +22,8 @@ impl Config {
 #[derive(Debug, Default, Deserialize)]
 #[serde(default)]
 pub struct Classifier {
+    pub unwanted_asns: Vec<u32>,
+    pub asns_db_path: Option<String>,
     pub trusted_decision_header: Option<String>,
 }
 
