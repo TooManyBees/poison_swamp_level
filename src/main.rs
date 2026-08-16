@@ -38,7 +38,7 @@ async fn main() {
         garbage: Arc::new(garbage),
     };
 
-    let listener = TcpListener::bind("127.0.0.1:3000").await.unwrap();
+    let listener = TcpListener::bind(config.server.interface).await.unwrap();
 
     loop {
         let (stream, _) = listener.accept().await.unwrap();

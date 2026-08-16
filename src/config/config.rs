@@ -1,10 +1,12 @@
 use serde::Deserialize;
+use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4};
 use std::{error::Error, fs::File, ops::RangeInclusive, path::Path};
 
 #[derive(Debug, Default, Deserialize)]
 #[serde(default)]
 pub struct Config {
     pub garbage: Garbage,
+    pub server: Server,
 }
 
 impl Config {
@@ -84,6 +86,20 @@ impl Default for Links {
             min_count: 2,
             max_count: 5,
             separator: '-',
+        }
+    }
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(default)]
+pub struct Server {
+    pub interface: SocketAddr,
+}
+
+impl Default for Server {
+    fn default() -> Self {
+        Server {
+            interface: SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::new(127, 0, 0, 1), 4000)),
         }
     }
 }
