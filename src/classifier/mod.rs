@@ -1,7 +1,11 @@
+mod robots_json;
+
 use crate::config::Config;
+use aho_corasick::BuildError;
 use http::Request;
-use http::header::HeaderName;
+use http::header::{HeaderName, USER_AGENT};
 use maxminddb::{MaxMindDbError, Reader, geoip2::Asn};
+use robots_json::{RobotsJson, RobotsJsonError, load_robots_json};
 use std::net::IpAddr;
 
 #[derive(Debug)]
@@ -11,6 +15,7 @@ pub struct Classifier {
 
     asns_db: Option<maxminddb::Reader<Vec<u8>>>,
     unwanted_asns: Vec<u32>,
+    robots_matcher: Option<RobotsJson>,
 }
 
 impl Classifier {
@@ -38,12 +43,20 @@ impl Classifier {
             // TODO: warn that asns can't be looked up
         }
 
+        let robots_matcher = config
+            .classifier
+            .robots_json_path
+            .as_ref()
+            .map(load_robots_json)
+            .transpose()?;
+
         Ok(Classifier {
             poisons: config.poisons.clone(),
             trusted_decision_header,
 
             asns_db,
             unwanted_asns,
+            robots_matcher,
         })
     }
 
@@ -81,6 +94,8 @@ pub enum ClassifierError {
     Io(std::io::Error),
     InvalidHeader(String),
     MaxMindDb(MaxMindDbError),
+    Json(serde_json::Error),
+    Matcher(BuildError),
 }
 
 impl From<MaxMindDbError> for ClassifierError {
@@ -88,6 +103,16 @@ impl From<MaxMindDbError> for ClassifierError {
         match e {
             MaxMindDbError::Io(e) => ClassifierError::Io(e),
             e => ClassifierError::MaxMindDb(e),
+        }
+    }
+}
+
+impl From<RobotsJsonError> for ClassifierError {
+    fn from(e: RobotsJsonError) -> ClassifierError {
+        match e {
+            RobotsJsonError::Io(e) => ClassifierError::Io(e),
+            RobotsJsonError::Json(e) => ClassifierError::Json(e),
+            RobotsJsonError::Matcher(e) => ClassifierError::Matcher(e),
         }
     }
 }
