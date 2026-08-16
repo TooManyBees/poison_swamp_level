@@ -3,6 +3,7 @@ use crate::Config;
 use rand::{Rng, RngExt, seq::IndexedRandom};
 use rand_seeder::{Seeder, SipRng};
 use std::collections::BTreeMap;
+use std::fmt;
 use std::fs;
 use std::ops::RangeInclusive;
 use upon::{Engine, Template, Value};
@@ -106,5 +107,22 @@ impl Garbage {
         ]));
         let renderer = self.template.render_from(&self.engine, &data);
         renderer.to_string().unwrap()
+    }
+}
+
+impl fmt::Debug for Garbage {
+    fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
+        fmt.debug_struct("Garbage")
+            .field("corpus", &format_args!("Corpus {{ .. }}"))
+            .field("words", &format_args!("[ .. ]"))
+            .field("engine", &format_args!("Engine {{ .. }}"))
+            .field("template", &format_args!("Template {{ .. }}"))
+            .field("num_paragraphs", &self.num_paragraphs)
+            .field("num_words", &self.num_words)
+            .field("num_links", &self.num_links)
+            .field("num_link_words", &self.num_link_words)
+            .field("link_separator", &self.link_separator)
+            .field("poisons", &self.poisons)
+            .finish()
     }
 }
