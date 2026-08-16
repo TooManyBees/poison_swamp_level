@@ -2,14 +2,15 @@ use hyper::server::conn::http1;
 use hyper::service::Service;
 use hyper::{Request, Response, StatusCode, body::Incoming as IncomingBody};
 use hyper_util::rt::TokioIo;
-use poison_swamp_level::{Config, Garbage};
+use poison_swamp_level::{Classifier, Config, Garbage};
 use std::pin::Pin;
 use std::sync::Arc;
 use tokio::net::TcpListener;
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 struct App {
-    garbage: Arc<Garbage>,
+    classifier: Classifier,
+    garbage: Garbage,
 }
 
 impl Service<Request<IncomingBody>> for App {
@@ -32,11 +33,13 @@ impl Service<Request<IncomingBody>> for App {
 #[tokio::main(flavor = "local")]
 async fn main() {
     let config = Config::read_from_file("./config.json").unwrap();
+    let classifier = Classifier::new(&config).unwrap();
     let garbage = Garbage::new(&config).unwrap();
 
-    let app = App {
-        garbage: Arc::new(garbage),
-    };
+    let app = Arc::new(App {
+        classifier,
+        garbage,
+    });
 
     let listener = TcpListener::bind(config.server.interface).await.unwrap();
 

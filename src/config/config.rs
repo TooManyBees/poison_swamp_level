@@ -6,6 +6,7 @@ use std::{error::Error, fs::File, ops::RangeInclusive, path::Path};
 #[serde(default)]
 pub struct Config {
     pub poisons: Vec<String>,
+    pub classifier: Classifier,
     pub garbage: Garbage,
     pub server: Server,
 }
@@ -16,6 +17,12 @@ impl Config {
         let config = serde_json::from_reader(file)?;
         Ok(config)
     }
+}
+
+#[derive(Debug, Default, Deserialize)]
+#[serde(default)]
+pub struct Classifier {
+    pub trusted_decision_header: Option<String>,
 }
 
 #[derive(Debug, Default, Deserialize)]
