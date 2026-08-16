@@ -5,6 +5,7 @@ use std::{error::Error, fs::File, ops::RangeInclusive, path::Path};
 #[derive(Debug, Default, Deserialize)]
 #[serde(default)]
 pub struct Config {
+    pub poisons: Vec<String>,
     pub garbage: Garbage,
     pub server: Server,
 }
@@ -25,7 +26,6 @@ pub struct Garbage {
     pub paragraphs: Paragraphs,
     pub links: Links,
     pub template_file: Option<String>,
-    pub poisons: Vec<String>,
 }
 
 #[derive(Debug, Deserialize)]

@@ -66,7 +66,7 @@ impl Garbage {
             num_links: config.garbage.links.count(),
             num_link_words: config.garbage.links.num_words(),
             link_separator: config.garbage.links.separator,
-            poisons: config.garbage.poisons.clone(),
+            poisons: config.poisons.clone(),
         })
     }
 
@@ -107,7 +107,7 @@ impl Garbage {
             .collect();
 
         let is_poisoned = self.poisons.iter().any(|p| path.contains(p));
-        let links = if !is_poisoned {
+        let links = if !self.poisons.is_empty() && !is_poisoned {
             self.generate_links(path, generator.rng())
         } else {
             Value::None
