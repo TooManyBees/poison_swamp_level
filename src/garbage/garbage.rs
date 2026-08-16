@@ -7,11 +7,11 @@ use std::fs;
 use std::ops::RangeInclusive;
 use upon::{Engine, Template, Value};
 
-pub struct Garbage<'e> {
+pub struct Garbage {
     corpus: Corpus,
     words: Vec<&'static str>,
-    engine: Engine<'e>,
-    template: Template<'e>,
+    engine: Engine<'static>,
+    template: Template<'static>,
     num_paragraphs: RangeInclusive<usize>,
     num_words: RangeInclusive<usize>,
     num_links: RangeInclusive<usize>,
@@ -20,7 +20,7 @@ pub struct Garbage<'e> {
     poisons: Vec<String>,
 }
 
-impl<'e> Garbage<'e> {
+impl Garbage {
     pub fn new(config: &Config) -> Self {
         let corpus = Corpus::from_files(&config.garbage.source_files).unwrap();
         let words: Vec<_> = {
@@ -38,8 +38,9 @@ impl<'e> Garbage<'e> {
         }
         let template_str =
             fs::read_to_string(config.garbage.template_file.as_ref().unwrap()).unwrap();
+        let template_str = Box::leak(template_str.into_boxed_str());
         let engine = Engine::new();
-        let template = engine.compile(template_str).unwrap();
+        let template = engine.compile(&*template_str).unwrap();
         Garbage {
             corpus,
             words,
