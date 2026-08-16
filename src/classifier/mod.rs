@@ -71,6 +71,16 @@ impl Classifier {
             })
     }
 
+    fn poisoned_path<'r, B>(&self, req: &'r Request<B>) -> Option<&'r str> {
+        let path = req.uri().path();
+        for poison in &self.poisons {
+            if let Some(idx) = path.find(poison) {
+                return Some(&path[idx..idx + poison.len()]);
+            }
+        }
+        None
+    }
+
     fn asn<B>(&self, req: &Request<B>) -> Result<Option<u32>, MaxMindDbError> {
         let remote_ip = req.extensions().get::<IpAddr>().copied();
         if let Some((db, ip_addr)) = self.asns_db.as_ref().zip(remote_ip) {
@@ -81,12 +91,73 @@ impl Classifier {
         }
         Ok(None)
     }
+
+    fn unwanted_asn<B>(&self, req: &Request<B>) -> Option<u32> {
+        match self.asn(req) {
+            Ok(Some(asn)) if self.unwanted_asns.contains(&asn) => Some(asn),
+            Ok(_) => None,
+            Err(_e) => {
+                // TODO log an error
+                None
+            }
+        }
+    }
+
+    fn unwanted_agent<'r, B>(&self, req: &'r Request<B>) -> Option<&'r str> {
+        if let Some((matcher, user_agent)) = self
+            .robots_matcher
+            .as_ref()
+            .zip(req.headers().get(USER_AGENT).and_then(|h| h.to_str().ok()))
+        {
+            if let Some(m) = matcher.find(user_agent) {
+                return Some(&user_agent[m.range()]);
+            }
+        }
+        None
+    }
+
+    pub fn classify<B>(&self, req: &Request<B>) -> Classification {
+        if let Some(_poison) = self.poisoned_path(req) {
+            return Classification::Spam(SpamReason::Poison);
+        }
+
+        if let Some(_agent) = self.unwanted_agent(req) {
+            return Classification::Spam(SpamReason::UnwantedAgent);
+        }
+
+        if let Some(_asn) = self.unwanted_asn(req) {
+            return Classification::Spam(SpamReason::UnwantedASN);
+        }
+
+        Classification::Valid(ValidReason::Default)
+    }
 }
 
 #[derive(Debug)]
 pub enum TrustedDecision {
     Valid,
     Spam,
+}
+
+#[derive(Debug)]
+pub enum Classification {
+    Valid(ValidReason),
+    Spam(SpamReason),
+}
+
+#[derive(Debug)]
+pub enum ValidReason {
+    Default,
+    TrustedIP,
+    TrustedPath,
+    TrustedAgent,
+}
+
+#[derive(Debug)]
+pub enum SpamReason {
+    Poison,
+    UnwantedASN,
+    UnwantedAgent,
 }
 
 #[derive(Debug)]
