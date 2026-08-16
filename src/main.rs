@@ -43,7 +43,7 @@ async fn main() {
     let classifier = Arc::new(classifier);
     let garbage = Arc::new(garbage);
 
-    let listener = TcpListener::bind(config.server.interface).await.unwrap();
+    let listener = TcpListener::bind(config.server.listen).await.unwrap();
 
     loop {
         let (stream, addr) = listener.accept().await.unwrap();

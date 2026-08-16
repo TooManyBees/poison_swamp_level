@@ -103,13 +103,13 @@ impl Default for Links {
 #[derive(Debug, Deserialize)]
 #[serde(default)]
 pub struct Server {
-    pub interface: SocketAddr,
+    pub listen: SocketAddr,
 }
 
 impl Default for Server {
     fn default() -> Self {
         Server {
-            interface: SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::new(127, 0, 0, 1), 4000)),
+            listen: SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::new(127, 0, 0, 1), 4000)),
         }
     }
 }
