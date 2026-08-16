@@ -1,4 +1,5 @@
 use super::generator::Corpus;
+use super::read_text::ParseError;
 use crate::Config;
 use rand::{Rng, RngExt, seq::IndexedRandom};
 use rand_seeder::{Seeder, SipRng};
@@ -22,27 +23,40 @@ pub struct Garbage {
 }
 
 impl Garbage {
-    pub fn new(config: &Config) -> Self {
-        let corpus = Corpus::from_files(&config.garbage.source_files).unwrap();
-        let words: Vec<_> = {
-            let s: &'static str = fs::read_to_string(config.garbage.words_file.as_ref().unwrap())
-                .unwrap()
-                .leak();
-            s.lines().collect()
+    pub fn new(config: &Config) -> Result<Self, GarbageError> {
+        let corpus = Corpus::from_files(&config.garbage.source_files)?;
+
+        let words = {
+            let words_file = config
+                .garbage
+                .words_file
+                .as_ref()
+                .ok_or(GarbageError::WordsFileMissing)?;
+            let s = fs::read_to_string(words_file)?.leak();
+            let lines: Vec<_> = s.lines().collect();
+            let min_words_needed = *config.garbage.links.num_words().end();
+            if lines.len() < min_words_needed {
+                return Err(GarbageError::WordsListTooShort(
+                    words_file.to_string(),
+                    min_words_needed,
+                ));
+            }
+            lines
         };
-        if words.len() < *config.garbage.links.num_words().end() {
-            panic!(
-                "Words list {} is shorter than config.garbage.links.max_words {}",
-                config.garbage.words_file.as_ref().unwrap(),
-                config.garbage.links.num_words().end()
-            );
-        }
-        let template_str =
-            fs::read_to_string(config.garbage.template_file.as_ref().unwrap()).unwrap();
-        let template_str = Box::leak(template_str.into_boxed_str());
-        let engine = Engine::new();
-        let template = engine.compile(&*template_str).unwrap();
-        Garbage {
+
+        let (engine, template) = {
+            let template_path = config
+                .garbage
+                .template_file
+                .as_ref()
+                .ok_or(GarbageError::TemplateFileMissing)?;
+            let template_str = fs::read_to_string(template_path)?.leak();
+            let engine = Engine::new();
+            let template = engine.compile(&*template_str)?;
+            (engine, template)
+        };
+
+        Ok(Garbage {
             corpus,
             words,
             engine,
@@ -53,7 +67,7 @@ impl Garbage {
             num_link_words: config.garbage.links.num_words(),
             link_separator: config.garbage.links.separator,
             poisons: config.garbage.poisons.clone(),
-        }
+        })
     }
 
     fn generate_links<R: Rng>(&self, path: &str, rng: &mut R) -> Value {
@@ -123,5 +137,36 @@ impl fmt::Debug for Garbage {
             .field("link_separator", &self.link_separator)
             .field("poisons", &self.poisons)
             .finish()
+    }
+}
+
+#[derive(Debug)]
+pub enum GarbageError {
+    Io(std::io::Error),
+    CorpusEmpty,
+    WordsFileMissing,
+    WordsListTooShort(String, usize),
+    TemplateFileMissing,
+    Template(upon::Error),
+}
+
+impl From<std::io::Error> for GarbageError {
+    fn from(e: std::io::Error) -> GarbageError {
+        GarbageError::Io(e)
+    }
+}
+
+impl From<upon::Error> for GarbageError {
+    fn from(e: upon::Error) -> GarbageError {
+        GarbageError::Template(e)
+    }
+}
+
+impl From<ParseError> for GarbageError {
+    fn from(e: ParseError) -> GarbageError {
+        match e {
+            ParseError::Io(e) => GarbageError::Io(e),
+            ParseError::NoContent => GarbageError::CorpusEmpty,
+        }
     }
 }

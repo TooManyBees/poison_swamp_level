@@ -32,7 +32,7 @@ impl Service<Request<IncomingBody>> for App {
 #[tokio::main(flavor = "local")]
 async fn main() {
     let config = Config::read_from_file("./config.json").unwrap();
-    let garbage = Garbage::new(&config);
+    let garbage = Garbage::new(&config).unwrap();
 
     let app = App {
         garbage: Arc::new(garbage),
