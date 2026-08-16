@@ -67,13 +67,12 @@ impl Garbage {
             };
             if let Some(p) = self.poisons.choose(rng) {
                 link_path.push_str(p);
-                link_path.push(self.link_separator);
             }
             let num_words = rng.random_range(self.num_link_words.clone());
             let words: Vec<_> = self.words.sample(rng, num_words).copied().collect();
             for segment in &words {
-                link_path.push_str(segment);
                 link_path.push(self.link_separator);
+                link_path.push_str(segment);
             }
             let text = words.join(" ");
             links.push(Value::Map(BTreeMap::from([
