@@ -1,4 +1,7 @@
+use http::StatusCode;
 use serde::Deserialize;
+use serde::de;
+use std::fmt;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr, SocketAddrV4};
 use std::{error::Error, fs::File, ops::RangeInclusive, path::Path};
 
@@ -108,12 +111,57 @@ impl Default for Links {
 #[serde(default)]
 pub struct Server {
     pub listen: SocketAddr,
+    #[serde(deserialize_with = "deserialize_status_code")]
+    pub status_code_valid: StatusCode,
+    #[serde(deserialize_with = "deserialize_status_code")]
+    pub status_code_spam: StatusCode,
 }
 
 impl Default for Server {
     fn default() -> Self {
         Server {
             listen: SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::new(127, 0, 0, 1), 4000)),
+            status_code_valid: StatusCode::OK,
+            status_code_spam: StatusCode::UNAUTHORIZED,
         }
     }
+}
+
+struct StatusVisitor;
+
+impl StatusVisitor {
+    fn to_status<E: de::Error>(self, val: u64) -> Result<StatusCode, E> {
+        if let Ok(val) = u16::try_from(val) {
+            if let Ok(val) = StatusCode::from_u16(val) {
+                return Ok(val);
+            }
+        }
+        Err(de::Error::invalid_value(
+            de::Unexpected::Unsigned(val.into()),
+            &self,
+        ))
+    }
+}
+
+impl<'de> de::Visitor<'de> for StatusVisitor {
+    type Value = StatusCode;
+
+    fn expecting(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
+        fmt.write_str("HTTP status code")
+    }
+
+    fn visit_i64<E: de::Error>(self, val: i64) -> Result<Self::Value, E> {
+        self.to_status(val as u64)
+    }
+
+    fn visit_u64<E: de::Error>(self, val: u64) -> Result<Self::Value, E> {
+        self.to_status(val)
+    }
+}
+
+fn deserialize_status_code<'de, D>(deserializer: D) -> Result<StatusCode, D::Error>
+where
+    D: de::Deserializer<'de>,
+{
+    deserializer.deserialize_u16(StatusVisitor)
 }

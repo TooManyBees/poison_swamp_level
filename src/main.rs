@@ -13,6 +13,8 @@ struct App {
     client_ip: IpAddr,
     classifier: Arc<Classifier>,
     garbage: Arc<Garbage>,
+    status_code_valid: http::StatusCode,
+    status_code_spam: http::StatusCode,
 }
 
 fn preflight_check(
@@ -30,8 +32,8 @@ fn preflight_check(
     }
 
     let preflight_status = match app.classifier.classify(&req) {
-        Classification::Valid(_) => StatusCode::OK,
-        Classification::Spam(_) => StatusCode::UNAUTHORIZED,
+        Classification::Valid(_) => app.status_code_valid,
+        Classification::Spam(_) => app.status_code_spam,
     };
 
     let res = Response::builder()
@@ -70,6 +72,8 @@ async fn main() {
             client_ip: addr.ip(),
             classifier: classifier.clone(),
             garbage: garbage.clone(),
+            status_code_valid: config.server.status_code_valid,
+            status_code_spam: config.server.status_code_spam,
         };
         tokio::task::spawn(async move {
             if let Err(e) = http1::Builder::new().serve_connection(io, app).await {
