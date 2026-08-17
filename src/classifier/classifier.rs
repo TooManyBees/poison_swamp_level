@@ -17,7 +17,7 @@ pub struct Classifier {
     unwanted_agents: Option<Matcher>,
 
     trusted_paths: Vec<String>,
-    // trusted_ips: Vec<String>, // FIXME
+    trusted_ips: Vec<IpAddr>,
     // trusted_agents: Vec<String>,
 }
 
@@ -72,7 +72,7 @@ impl Classifier {
             unwanted_asns,
             unwanted_agents,
             trusted_paths: config.classifier.trusted_paths.clone(),
-            // trusted_ips: vec![],
+            trusted_ips: config.classifier.trusted_ips.clone(),
             // trusted_agents: vec![],
         })
     }
@@ -92,6 +92,15 @@ impl Classifier {
         let path = req.uri().path();
         if self.trusted_paths.iter().any(|p| p == path) {
             return Some(path);
+        }
+        None
+    }
+
+    fn trusted_ip<B>(&self, req: &Request<B>) -> Option<IpAddr> {
+        if let Some(remote_ip) = req.extensions().get::<IpAddr>().copied() {
+            if self.trusted_ips.contains(&remote_ip) {
+                return Some(remote_ip);
+            }
         }
         None
     }
@@ -144,6 +153,10 @@ impl Classifier {
     pub fn classify<B>(&self, req: &Request<B>) -> Classification {
         if let Some(_path) = self.trusted_path(req) {
             return Classification::Valid(ValidReason::TrustedPath);
+        }
+
+        if let Some(_ip) = self.trusted_ip(req) {
+            return Classification::Valid(ValidReason::TrustedIP);
         }
 
         if let Some(_poison) = self.poisoned_path(req) {

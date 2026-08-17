@@ -1,5 +1,5 @@
 use serde::Deserialize;
-use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4};
+use std::net::{IpAddr, Ipv4Addr, SocketAddr, SocketAddrV4};
 use std::{error::Error, fs::File, ops::RangeInclusive, path::Path};
 
 #[derive(Debug, Default, Deserialize)]
@@ -26,6 +26,7 @@ pub struct Classifier {
     pub asns_db_path: Option<String>,
     pub robots_json_path: Option<String>,
     pub unwanted_agents: Vec<String>,
+    pub trusted_ips: Vec<IpAddr>,
     pub trusted_paths: Vec<String>,
     pub trusted_decision_header: Option<String>,
 }
