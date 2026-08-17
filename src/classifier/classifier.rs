@@ -18,7 +18,7 @@ pub struct Classifier {
 
     trusted_paths: Vec<String>,
     trusted_ips: Vec<IpAddr>,
-    // trusted_agents: Vec<String>,
+    trusted_agents: Option<Matcher>,
 }
 
 impl Classifier {
@@ -64,6 +64,12 @@ impl Classifier {
             None
         };
 
+        let trusted_agents = if !config.classifier.trusted_agents.is_empty() {
+            Some(Matcher::new(config.classifier.trusted_agents.clone())?)
+        } else {
+            None
+        };
+
         Ok(Classifier {
             poisons: config.poisons.clone(),
             trusted_decision_header,
@@ -73,7 +79,7 @@ impl Classifier {
             unwanted_agents,
             trusted_paths: config.classifier.trusted_paths.clone(),
             trusted_ips: config.classifier.trusted_ips.clone(),
-            // trusted_agents: vec![],
+            trusted_agents,
         })
     }
 
@@ -137,17 +143,12 @@ impl Classifier {
         }
     }
 
+    fn trusted_agent<'r, B>(&self, req: &'r Request<B>) -> Option<&'r str> {
+        match_agent(self.trusted_agents.as_ref(), req)
+    }
+
     fn unwanted_agent<'r, B>(&self, req: &'r Request<B>) -> Option<&'r str> {
-        if let Some((matcher, user_agent)) = self
-            .unwanted_agents
-            .as_ref()
-            .zip(req.headers().get(USER_AGENT).and_then(|h| h.to_str().ok()))
-        {
-            if let Some(m) = matcher.find(user_agent) {
-                return Some(&user_agent[m.range()]);
-            }
-        }
-        None
+        match_agent(self.unwanted_agents.as_ref(), req)
     }
 
     pub fn classify<B>(&self, req: &Request<B>) -> Classification {
@@ -157,6 +158,10 @@ impl Classifier {
 
         if let Some(_ip) = self.trusted_ip(req) {
             return Classification::Valid(ValidReason::TrustedIP);
+        }
+
+        if let Some(_agent) = self.trusted_agent(req) {
+            return Classification::Valid(ValidReason::TrustedAgent);
         }
 
         if let Some(_poison) = self.poisoned_path(req) {
@@ -173,6 +178,16 @@ impl Classifier {
 
         Classification::Valid(ValidReason::Default)
     }
+}
+
+fn match_agent<'r, B>(matcher: Option<&Matcher>, req: &'r Request<B>) -> Option<&'r str> {
+    let header_value = req.headers().get(USER_AGENT).and_then(|h| h.to_str().ok());
+    if let Some((matcher, user_agent)) = matcher.zip(header_value) {
+        if let Some(m) = matcher.find(user_agent) {
+            return Some(&user_agent[m.range()]);
+        }
+    }
+    None
 }
 
 #[derive(Debug, Copy, Clone)]

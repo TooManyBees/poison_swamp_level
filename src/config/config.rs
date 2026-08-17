@@ -28,6 +28,7 @@ pub struct Classifier {
     pub unwanted_agents: Vec<String>,
     pub trusted_ips: Vec<IpAddr>,
     pub trusted_paths: Vec<String>,
+    pub trusted_agents: Vec<String>,
     pub trusted_decision_header: Option<String>,
 }
 
