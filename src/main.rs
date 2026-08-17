@@ -17,18 +17,29 @@ struct App {
     status_code_spam: http::StatusCode,
 }
 
+impl App {
+    fn garbage_response<B>(&self, req: &Request<B>) -> Response<String> {
+        let path = req
+            .uri()
+            .path_and_query()
+            .map(|pq| pq.as_str())
+            .unwrap_or(req.uri().path());
+
+        let body = self.garbage.render(path);
+        Response::builder()
+            .status(StatusCode::OK)
+            .body(body)
+            .unwrap()
+    }
+}
+
 fn preflight_check(
     app: &App,
     req: Request<IncomingBody>,
 ) -> Pin<Box<dyn Future<Output = Result<Response<String>, hyper::Error>> + Send>> {
     if let Some(TrustedDecision::Spam) = app.classifier.trusted_decision(&req) {
-        let path = req.uri().path();
-        let body = app.garbage.render(path);
-        let res = Response::builder()
-            .status(StatusCode::OK)
-            .body(body)
-            .unwrap();
-        return Box::pin(async { Ok(res) });
+        let resp = app.garbage_response(&req);
+        return Box::pin(async { Ok(resp) });
     }
 
     let preflight_status = match app.classifier.classify(&req) {
