@@ -66,7 +66,7 @@ impl Garbage {
             num_links: config.garbage.links.count(),
             num_link_words: config.garbage.links.num_words(),
             link_separator: config.garbage.links.separator,
-            poisons: config.poisons.clone(),
+            poisons: config.garbage.poisons.clone(),
         })
     }
 

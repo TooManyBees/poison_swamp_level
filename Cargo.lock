@@ -168,7 +168,6 @@ checksum = "082ddf81b2acd76fe04412655d17befedfff1837db772f8e74c38050d25ed670"
 dependencies = [
  "miette",
  "num-traits",
- "serde",
  "winnow",
 ]
 

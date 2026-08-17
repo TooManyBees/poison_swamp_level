@@ -51,7 +51,7 @@ impl Service<Request<IncomingBody>> for App {
 
 #[tokio::main(flavor = "local")]
 async fn main() {
-    let config = Config::read_from_file("./config.json").unwrap();
+    let config = Config::read_from_file("./config.kdl").unwrap();
     let classifier = Classifier::new(&config).unwrap();
     let garbage = Garbage::new(&config).unwrap();
 

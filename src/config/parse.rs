@@ -1,11 +1,7 @@
-use super::config::{Classifier, Config, Garbage, Links, Paragraphs, Server, ServerMode};
+use super::config::{Classifier, Config, Garbage, Server, ServerMode};
 use http::status::{InvalidStatusCode, StatusCode};
-use kdl::{KdlDocument, KdlError, KdlNode};
-use std::fmt::Debug;
-use std::fs;
-use std::net::AddrParseError;
-use std::num::TryFromIntError;
-use std::path::Path;
+use kdl::{KdlDocument, KdlEntry, KdlError, KdlNode};
+use std::{fmt::Debug, fs, net::AddrParseError, num::TryFromIntError, path::Path};
 
 pub fn load_config<P: AsRef<Path>>(path: P) -> Result<Config, ParseError> {
     let doc = load_file(path)?;
@@ -49,7 +45,7 @@ trait Parseable {
 
     fn one_string_arg(&self) -> Result<&str, ParseError>;
 
-    fn int_prop(&self, name: &str) -> Result<Option<i128>, ParseError>;
+    fn int_prop<I: Debug + TryFrom<i128>>(&self, name: &str) -> Result<Option<I>, ParseError>;
 
     fn string_seq(&self) -> Result<Vec<String>, ParseError>;
 
@@ -72,11 +68,11 @@ impl Parseable for KdlNode {
                     server.listen = child.one_string_arg()?.parse()?;
                 }
                 "status-codes" => {
-                    if let Some(status) = child.int_prop("valid")? {
-                        server.status_code_valid = StatusCode::from_u16(u16::try_from(status)?)?;
+                    if let Some(status) = child.int_prop::<u16>("valid")? {
+                        server.status_code_valid = StatusCode::from_u16(status)?;
                     }
-                    if let Some(status) = child.int_prop("spam")? {
-                        server.status_code_spam = StatusCode::from_u16(u16::try_from(status)?)?;
+                    if let Some(status) = child.int_prop::<u16>("spam")? {
+                        server.status_code_spam = StatusCode::from_u16(status)?;
                     }
                 }
                 _ => {}
@@ -143,10 +139,54 @@ impl Parseable for KdlNode {
                     garbage.template_file = Some(child.one_string_arg()?.to_string());
                 }
                 "poisons" => {
-                    // garbage.poisons = child.string_seq()?;
+                    garbage.poisons = child.string_seq()?;
                 }
-                "paragraphs" => {}
-                "links" => {}
+                "paragraphs" => {
+                    if let Some(n) = child.int_prop::<usize>("min")? {
+                        garbage.paragraphs.min_count = n;
+                    }
+                    if let Some(n) = child.int_prop::<usize>("max")? {
+                        garbage.paragraphs.max_count = n;
+                    }
+                    for child in child.iter_children() {
+                        match child.name().value() {
+                            "words" => {
+                                if let Some(n) = child.int_prop::<usize>("min")? {
+                                    garbage.paragraphs.min_words = n;
+                                }
+                                if let Some(n) = child.int_prop::<usize>("max")? {
+                                    garbage.paragraphs.max_words = n;
+                                }
+                            }
+                            _ => {}
+                        }
+                    }
+                }
+                "links" => {
+                    if let Some(n) = child.int_prop::<usize>("min")? {
+                        garbage.links.min_count = n;
+                    }
+                    if let Some(n) = child.int_prop::<usize>("max")? {
+                        garbage.links.max_count = n;
+                    }
+                    for child in child.iter_children() {
+                        match child.name().value() {
+                            "words" => {
+                                if let Some(n) = child.int_prop::<usize>("min")? {
+                                    garbage.links.min_words = n;
+                                }
+                                if let Some(n) = child.int_prop::<usize>("max")? {
+                                    garbage.links.max_words = n;
+                                }
+                            }
+                            "separator" => {
+                                garbage.links.separator =
+                                    child.one_string_arg()?.chars().nth(0).unwrap();
+                            }
+                            _ => {}
+                        }
+                    }
+                }
                 _ => {}
             }
         }
@@ -155,37 +195,30 @@ impl Parseable for KdlNode {
     }
 
     fn one_string_arg(&self) -> Result<&str, ParseError> {
-        self.entry(0)
-            .map(|e| e.value())
-            .ok_or_else(|| ParseError::Invalid {
-                field: self.name().value().to_string(),
-                message: format!(
-                    "field {} at {} must have one argument",
-                    self.name().value(),
-                    self.span().offset()
-                ),
-            })?
-            .as_string()
-            .ok_or_else(|| ParseError::Invalid {
-                field: self.name().value().to_string(),
-                message: format!(
-                    "field {} at {} must have a string argument",
-                    self.name().value(),
-                    self.span().offset()
-                ),
-            })
+        let entry = self
+            .entry(0)
+            .ok_or_else(|| ParseError::from_node(self, "must have one string argument".into()))?;
+        match entry.value().as_string() {
+            Some("") => Err(ParseError::from_entry(entry, "must not be empty".into())),
+            Some(arg) => Ok(arg),
+            None => Err(ParseError::from_entry(entry, "must be a string".into())),
+        }
     }
 
-    fn int_prop(&self, name: &str) -> Result<Option<i128>, ParseError> {
-        self.get(name)
-            .map(|prop| {
-                prop.as_integer().ok_or_else(|| ParseError::Invalid {
-                    field: self.name().value().to_string(),
-                    message: format!(
-                        "property {name} at {} must be an integer",
-                        self.span().offset(),
-                    ),
-                })
+    fn int_prop<I: Debug + TryFrom<i128>>(&self, name: &str) -> Result<Option<I>, ParseError> {
+        self.iter()
+            .find(|e| e.name().map(|n| n.value() == name).unwrap_or(false))
+            .map(|entry| {
+                entry
+                    .value()
+                    .as_integer()
+                    .and_then(|n| n.try_into().ok())
+                    .ok_or_else(|| {
+                        ParseError::from_entry(
+                            entry,
+                            format!("must be a {} integer", std::any::type_name::<I>()),
+                        )
+                    })
             })
             .transpose()
     }
@@ -193,19 +226,16 @@ impl Parseable for KdlNode {
     fn string_seq(&self) -> Result<Vec<String>, ParseError> {
         let mut seq = Vec::new();
         for entry in self.iter() {
-            if let Some(_name) = entry.name() {
-                return Err(ParseError::Invalid {
-                    field: self.name().value().to_string(),
-                    message: format!("{} must not have named properties", self.name().value()),
-                });
+            if entry.name().is_some() {
+                return Err(ParseError::from_entry(
+                    entry,
+                    "must not be a named property".into(),
+                ));
             }
             match entry.value().as_string() {
                 Some(s) => seq.push(s.to_string()),
                 None => {
-                    return Err(ParseError::Invalid {
-                        field: self.name().value().to_string(),
-                        message: format!("{} must be a sequence of strings", self.name().value()),
-                    });
+                    return Err(ParseError::from_entry(entry, "must be a string".into()));
                 }
             }
         }
@@ -216,31 +246,23 @@ impl Parseable for KdlNode {
     fn int_seq<I: Debug + TryFrom<i128>>(&self) -> Result<Vec<I>, ParseError> {
         let mut seq = Vec::new();
         for entry in self.iter() {
-            if let Some(_name) = entry.name() {
-                return Err(ParseError::Invalid {
-                    field: self.name().value().to_string(),
-                    message: format!("{} must not have named properties", self.name().value()),
-                });
+            if entry.name().is_some() {
+                return Err(ParseError::from_entry(
+                    entry,
+                    "must not be a namedj property".into(),
+                ));
             }
-            match entry.value().as_integer() {
-                Some(i) => {
-                    let converted = I::try_from(i).map_err(|_| ParseError::Invalid {
-                        field: self.name().value().to_string(),
-                        message: format!("it doesn't work, babe"),
-                    })?;
-                    seq.push(converted);
-                }
-                None => {
-                    return Err(ParseError::Invalid {
-                        field: self.name().value().to_string(),
-                        message: format!(
-                            "{} must be a sequence of {} integers",
-                            self.name().value(),
-                            std::any::type_name::<I>()
-                        ),
-                    });
-                }
-            }
+            let int = entry
+                .value()
+                .as_integer()
+                .and_then(|v| v.try_into().ok())
+                .ok_or_else(|| {
+                    ParseError::from_entry(
+                        entry,
+                        format!("must be a {} integer", std::any::type_name::<I>()),
+                    )
+                })?;
+            seq.push(int);
         }
         seq.shrink_to_fit();
         Ok(seq)
@@ -251,10 +273,35 @@ impl Parseable for KdlNode {
 pub enum ParseError {
     Io(std::io::Error),
     Kdl(KdlError),
-    Invalid { field: String, message: String },
+    InvalidNode {
+        field: String,
+        offset: usize,
+        message: String,
+    },
+    InvalidEntry {
+        offset: usize,
+        message: String,
+    },
     InvalidSocketAddr(AddrParseError),
     Int(TryFromIntError),
-    StatusCode(InvalidStatusCode),
+    StatusCode,
+}
+
+impl ParseError {
+    fn from_node(node: &KdlNode, message: String) -> ParseError {
+        ParseError::InvalidNode {
+            field: node.name().value().to_string(),
+            offset: node.span().offset(),
+            message,
+        }
+    }
+
+    fn from_entry(entry: &KdlEntry, message: String) -> ParseError {
+        ParseError::InvalidEntry {
+            offset: entry.span().offset(),
+            message,
+        }
+    }
 }
 
 impl From<std::io::Error> for ParseError {
@@ -282,7 +329,58 @@ impl From<TryFromIntError> for ParseError {
 }
 
 impl From<InvalidStatusCode> for ParseError {
-    fn from(e: InvalidStatusCode) -> ParseError {
-        ParseError::StatusCode(e)
+    fn from(_: InvalidStatusCode) -> ParseError {
+        ParseError::StatusCode
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::{ParseError, Parseable};
+    use kdl::KdlDocument;
+    use std::assert_matches;
+
+    #[test]
+    fn int_seq() {
+        let doc: KdlDocument = "numbers 1 2 3 4".parse().unwrap();
+        let numbers = doc.nodes().first().unwrap();
+        assert_matches!(numbers.int_seq::<u8>().as_deref(), Ok(&[1u8, 2, 3, 4]));
+    }
+
+    #[test]
+    fn int_seq_parses_empty_node() {
+        let doc: KdlDocument = "numbers".parse().unwrap();
+        let numbers = doc.nodes().first().unwrap();
+        assert_matches!(numbers.int_seq::<u8>().as_deref(), Ok(&[]));
+    }
+
+    #[test]
+    fn int_seq_rejects_named_props() {
+        let doc: KdlDocument = "numbers 1 2 3 four=4".parse().unwrap();
+        let numbers = doc.nodes().first().unwrap();
+        assert_matches!(
+            numbers.int_seq::<u8>(),
+            Err(ParseError::InvalidEntry { .. })
+        );
+    }
+
+    #[test]
+    fn int_seq_rejects_string_props() {
+        let doc: KdlDocument = "numbers 1 two three 4".parse().unwrap();
+        let numbers = doc.nodes().first().unwrap();
+        assert_matches!(
+            numbers.int_seq::<u8>(),
+            Err(ParseError::InvalidEntry { .. })
+        );
+    }
+
+    #[test]
+    fn int_seq_rejects_incompatible_numbers() {
+        let doc: KdlDocument = "numbers 254 255 256 257".parse().unwrap();
+        let numbers = doc.nodes().first().unwrap();
+        assert_matches!(
+            numbers.int_seq::<u8>(),
+            Err(ParseError::InvalidEntry { .. })
+        );
     }
 }

@@ -73,7 +73,7 @@ impl Classifier {
         };
 
         Ok(Classifier {
-            poisons: config.poisons.clone(),
+            poisons: config.garbage.poisons.clone(),
             trusted_decision_header,
 
             asns_db,
