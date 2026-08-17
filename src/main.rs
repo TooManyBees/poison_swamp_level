@@ -2,7 +2,7 @@ use hyper::server::conn::http1;
 use hyper::service::Service;
 use hyper::{Request, Response, StatusCode, body::Incoming as IncomingBody};
 use hyper_util::rt::TokioIo;
-use poison_swamp_level::{Classifier, Config, Garbage};
+use poison_swamp_level::{Classification, Classifier, Config, Garbage, TrustedDecision};
 use std::net::IpAddr;
 use std::pin::Pin;
 use std::sync::Arc;
@@ -15,6 +15,32 @@ struct App {
     garbage: Arc<Garbage>,
 }
 
+fn preflight_check(
+    app: &App,
+    req: Request<IncomingBody>,
+) -> Pin<Box<dyn Future<Output = Result<Response<String>, hyper::Error>> + Send>> {
+    if let Some(TrustedDecision::Spam) = app.classifier.trusted_decision(&req) {
+        let path = req.uri().path();
+        let body = app.garbage.render(path);
+        let res = Response::builder()
+            .status(StatusCode::OK)
+            .body(body)
+            .unwrap();
+        return Box::pin(async { Ok(res) });
+    }
+
+    let preflight_status = match app.classifier.classify(&req) {
+        Classification::Valid(_) => StatusCode::OK,
+        Classification::Spam(_) => StatusCode::UNAUTHORIZED,
+    };
+
+    let res = Response::builder()
+        .status(preflight_status)
+        .body("".into())
+        .unwrap();
+    Box::pin(async { Ok(res) })
+}
+
 impl Service<Request<IncomingBody>> for App {
     type Response = Response<String>;
     type Error = hyper::Error;
@@ -22,15 +48,7 @@ impl Service<Request<IncomingBody>> for App {
 
     fn call(&self, mut req: Request<IncomingBody>) -> Self::Future {
         req.extensions_mut().insert(self.client_ip);
-
-        let path = req.uri().path();
-        let body = self.garbage.render(path);
-        let res = Response::builder()
-            .status(StatusCode::OK)
-            .body(body)
-            .unwrap();
-
-        Box::pin(async { Ok(res) })
+        preflight_check(self, req)
     }
 }
 

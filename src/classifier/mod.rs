@@ -2,4 +2,4 @@ mod classifier;
 mod matcher;
 mod robots_json;
 
-pub use classifier::Classifier;
+pub use classifier::{Classification, Classifier, TrustedDecision};

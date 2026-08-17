@@ -2,8 +2,10 @@ use super::matcher::Matcher;
 use super::robots_json::{RobotsJsonError, load_robots_json};
 use crate::config::Config;
 use aho_corasick::BuildError;
-use http::Request;
-use http::header::{HeaderName, USER_AGENT};
+use http::{
+    Request,
+    header::{HeaderName, USER_AGENT},
+};
 use maxminddb::{MaxMindDbError, Reader, geoip2::Asn};
 use std::net::IpAddr;
 
