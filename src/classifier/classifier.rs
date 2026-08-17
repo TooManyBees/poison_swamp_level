@@ -15,8 +15,9 @@ pub struct Classifier {
     asns_db: Option<maxminddb::Reader<Vec<u8>>>,
     unwanted_asns: Vec<u32>,
     unwanted_agents: Option<Matcher>,
+
+    trusted_paths: Vec<String>,
     // trusted_ips: Vec<String>, // FIXME
-    // trusted_paths: Vec<String>,
     // trusted_agents: Vec<String>,
 }
 
@@ -70,8 +71,8 @@ impl Classifier {
             asns_db,
             unwanted_asns,
             unwanted_agents,
+            trusted_paths: config.classifier.trusted_paths.clone(),
             // trusted_ips: vec![],
-            // trusted_paths: vec![],
             // trusted_agents: vec![],
         })
     }
@@ -85,6 +86,14 @@ impl Classifier {
                 b"spam" => Some(TrustedDecision::Spam),
                 _other => None, // FIXME account for this
             })
+    }
+
+    fn trusted_path<'r, B>(&self, req: &'r Request<B>) -> Option<&'r str> {
+        let path = req.uri().path();
+        if self.trusted_paths.iter().any(|p| p == path) {
+            return Some(path);
+        }
+        None
     }
 
     fn poisoned_path<'r, B>(&self, req: &'r Request<B>) -> Option<&'r str> {
@@ -133,6 +142,10 @@ impl Classifier {
     }
 
     pub fn classify<B>(&self, req: &Request<B>) -> Classification {
+        if let Some(_path) = self.trusted_path(req) {
+            return Classification::Valid(ValidReason::TrustedPath);
+        }
+
         if let Some(_poison) = self.poisoned_path(req) {
             return Classification::Spam(SpamReason::Poison);
         }
