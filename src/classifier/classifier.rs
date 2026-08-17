@@ -151,29 +151,29 @@ impl Classifier {
         match_agent(self.unwanted_agents.as_ref(), req)
     }
 
-    pub fn classify<B>(&self, req: &Request<B>) -> Classification {
-        if let Some(_path) = self.trusted_path(req) {
-            return Classification::Valid(ValidReason::TrustedPath);
+    pub fn classify<'r, B>(&self, req: &'r Request<B>) -> Classification<'r> {
+        if let Some(path) = self.trusted_path(req) {
+            return Classification::Valid(ValidReason::TrustedPath(path));
         }
 
-        if let Some(_ip) = self.trusted_ip(req) {
-            return Classification::Valid(ValidReason::TrustedIP);
+        if let Some(ip) = self.trusted_ip(req) {
+            return Classification::Valid(ValidReason::TrustedIP(ip));
         }
 
-        if let Some(_agent) = self.trusted_agent(req) {
-            return Classification::Valid(ValidReason::TrustedAgent);
+        if let Some(agent) = self.trusted_agent(req) {
+            return Classification::Valid(ValidReason::TrustedAgent(agent));
         }
 
-        if let Some(_poison) = self.poisoned_path(req) {
-            return Classification::Spam(SpamReason::Poison);
+        if let Some(poison) = self.poisoned_path(req) {
+            return Classification::Spam(SpamReason::Poison(poison));
         }
 
-        if let Some(_agent) = self.unwanted_agent(req) {
-            return Classification::Spam(SpamReason::UnwantedAgent);
+        if let Some(agent) = self.unwanted_agent(req) {
+            return Classification::Spam(SpamReason::UnwantedAgent(agent));
         }
 
-        if let Some(_asn) = self.unwanted_asn(req) {
-            return Classification::Spam(SpamReason::UnwantedASN);
+        if let Some(asn) = self.unwanted_asn(req) {
+            return Classification::Spam(SpamReason::UnwantedASN(asn));
         }
 
         Classification::Valid(ValidReason::Default)
@@ -197,24 +197,24 @@ pub enum TrustedDecision {
 }
 
 #[derive(Debug)]
-pub enum Classification {
-    Valid(ValidReason),
-    Spam(SpamReason),
+pub enum Classification<'a> {
+    Valid(ValidReason<'a>),
+    Spam(SpamReason<'a>),
 }
 
 #[derive(Debug)]
-pub enum ValidReason {
+pub enum ValidReason<'a> {
     Default,
-    TrustedIP,
-    TrustedPath,
-    TrustedAgent,
+    TrustedIP(IpAddr),
+    TrustedPath(&'a str),
+    TrustedAgent(&'a str),
 }
 
 #[derive(Debug)]
-pub enum SpamReason {
-    Poison,
-    UnwantedASN,
-    UnwantedAgent,
+pub enum SpamReason<'a> {
+    Poison(&'a str),
+    UnwantedASN(u32),
+    UnwantedAgent(&'a str),
 }
 
 #[derive(Debug)]
