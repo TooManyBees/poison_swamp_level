@@ -2,17 +2,22 @@ use hyper::server::conn::http1;
 use hyper::service::Service;
 use hyper::{Request, Response, StatusCode, body::Incoming as IncomingBody};
 use hyper_util::rt::TokioIo;
-use poison_swamp_level::{Classification, Classifier, Config, Garbage, TrustedDecision};
+use poison_swamp_level::{
+    Classification, Classifier, Config, Garbage, ServerMode, TrustedDecision,
+};
 use std::net::IpAddr;
 use std::pin::Pin;
 use std::sync::Arc;
 use tokio::net::TcpListener;
+
+type ServiceFuture = Pin<Box<dyn Future<Output = Result<Response<String>, hyper::Error>> + Send>>;
 
 #[derive(Debug, Clone)]
 struct App {
     client_ip: IpAddr,
     classifier: Arc<Classifier>,
     garbage: Arc<Garbage>,
+    handler: fn(&App, Request<IncomingBody>) -> ServiceFuture,
     status_code_valid: http::StatusCode,
     status_code_spam: http::StatusCode,
 }
@@ -33,35 +38,14 @@ impl App {
     }
 }
 
-fn preflight_check(
-    app: &App,
-    req: Request<IncomingBody>,
-) -> Pin<Box<dyn Future<Output = Result<Response<String>, hyper::Error>> + Send>> {
-    if let Some(TrustedDecision::Spam) = app.classifier.trusted_decision(&req) {
-        let resp = app.garbage_response(&req);
-        return Box::pin(async { Ok(resp) });
-    }
-
-    let preflight_status = match app.classifier.classify(&req) {
-        Classification::Valid(_) => app.status_code_valid,
-        Classification::Spam(_) => app.status_code_spam,
-    };
-
-    let res = Response::builder()
-        .status(preflight_status)
-        .body("".into())
-        .unwrap();
-    Box::pin(async { Ok(res) })
-}
-
 impl Service<Request<IncomingBody>> for App {
     type Response = Response<String>;
     type Error = hyper::Error;
-    type Future = Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>> + Send>>;
+    type Future = ServiceFuture;
 
     fn call(&self, mut req: Request<IncomingBody>) -> Self::Future {
         req.extensions_mut().insert(self.client_ip);
-        preflight_check(self, req)
+        (self.handler)(self, req)
     }
 }
 
@@ -76,6 +60,11 @@ async fn main() {
 
     let listener = TcpListener::bind(config.server.listen).await.unwrap();
 
+    let handler = match config.server.mode {
+        ServerMode::Proxy => server_proxy,
+        ServerMode::Preflight => server_preflight,
+    };
+
     loop {
         let (stream, addr) = listener.accept().await.unwrap();
         let io = TokioIo::new(stream);
@@ -83,6 +72,7 @@ async fn main() {
             client_ip: addr.ip(),
             classifier: classifier.clone(),
             garbage: garbage.clone(),
+            handler,
             status_code_valid: config.server.status_code_valid,
             status_code_spam: config.server.status_code_spam,
         };
@@ -92,4 +82,34 @@ async fn main() {
             }
         });
     }
+}
+
+fn server_proxy(app: &App, req: Request<IncomingBody>) -> ServiceFuture {
+    let resp = match app.classifier.classify(&req) {
+        Classification::Valid(_) => Response::builder()
+            .status(app.status_code_valid)
+            .body("".into())
+            .unwrap(),
+        Classification::Spam(_) => app.garbage_response(&req),
+    };
+
+    Box::pin(async { Ok(resp) })
+}
+
+fn server_preflight(app: &App, req: Request<IncomingBody>) -> ServiceFuture {
+    if let Some(TrustedDecision::Spam) = app.classifier.trusted_decision(&req) {
+        let resp = app.garbage_response(&req);
+        return Box::pin(async { Ok(resp) });
+    }
+
+    let preflight_status = match app.classifier.classify(&req) {
+        Classification::Valid(_) => app.status_code_valid,
+        Classification::Spam(_) => app.status_code_spam,
+    };
+
+    let resp = Response::builder()
+        .status(preflight_status)
+        .body("".into())
+        .unwrap();
+    Box::pin(async { Ok(resp) })
 }

@@ -111,6 +111,7 @@ impl Default for Links {
 #[serde(default)]
 pub struct Server {
     pub listen: SocketAddr,
+    pub mode: ServerMode,
     #[serde(deserialize_with = "deserialize_status_code")]
     pub status_code_valid: StatusCode,
     #[serde(deserialize_with = "deserialize_status_code")]
@@ -121,10 +122,17 @@ impl Default for Server {
     fn default() -> Self {
         Server {
             listen: SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::new(127, 0, 0, 1), 4000)),
+            mode: ServerMode::Preflight,
             status_code_valid: StatusCode::OK,
             status_code_spam: StatusCode::UNAUTHORIZED,
         }
     }
+}
+
+#[derive(Debug, Deserialize)]
+pub enum ServerMode {
+    Proxy,
+    Preflight,
 }
 
 struct StatusVisitor;
