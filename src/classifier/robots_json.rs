@@ -1,41 +1,12 @@
-use aho_corasick::{AhoCorasick, BuildError, Input, Match};
+use super::matcher::Matcher;
+use aho_corasick::BuildError;
 use serde::de::{Deserialize, Deserializer, IgnoredAny, MapAccess, Visitor};
 use std::{fmt, fs::File, path::Path};
 
-pub struct RobotsJson {
-    patterns: Vec<String>,
-    matcher: AhoCorasick,
-}
-
-impl fmt::Debug for RobotsJson {
-    fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
-        fmt.debug_struct("RobotsJson")
-            .field("patterns", &self.patterns)
-            .field(
-                "matcher",
-                &format_args!(
-                    "AhoCorasick {{ memory usage: {} }}",
-                    self.matcher.memory_usage()
-                ),
-            )
-            .finish()
-    }
-}
-
-impl RobotsJson {
-    pub fn find<'h, I: Into<Input<'h>>>(&self, input: I) -> Option<Match> {
-        self.matcher.find(input)
-    }
-}
-
-pub fn load_robots_json<P: AsRef<Path>>(path: P) -> Result<RobotsJson, RobotsJsonError> {
+pub fn load_robots_json<P: AsRef<Path>>(path: P) -> Result<Matcher, RobotsJsonError> {
     let f = File::open(path)?;
     let robots: UserAgents = serde_json::from_reader(f)?;
-    let matcher = AhoCorasick::new(&robots.0)?;
-    Ok(RobotsJson {
-        patterns: robots.0,
-        matcher,
-    })
+    Ok(Matcher::new(robots.0)?)
 }
 
 #[derive(Debug)]

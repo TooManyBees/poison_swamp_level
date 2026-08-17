@@ -1,4 +1,5 @@
-use super::robots_json::{RobotsJson, RobotsJsonError, load_robots_json};
+use super::matcher::Matcher;
+use super::robots_json::{RobotsJsonError, load_robots_json};
 use crate::config::Config;
 use aho_corasick::BuildError;
 use http::Request;
@@ -13,7 +14,7 @@ pub struct Classifier {
 
     asns_db: Option<maxminddb::Reader<Vec<u8>>>,
     unwanted_asns: Vec<u32>,
-    robots_matcher: Option<RobotsJson>,
+    robots_matcher: Option<Matcher>,
     // trusted_ips: Vec<String>, // FIXME
     // trusted_paths: Vec<String>,
     // trusted_agents: Vec<String>,
