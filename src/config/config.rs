@@ -25,6 +25,7 @@ pub struct Classifier {
     pub unwanted_asns: Vec<u32>,
     pub asns_db_path: Option<String>,
     pub robots_json_path: Option<String>,
+    pub unwanted_agents: Vec<String>,
     pub trusted_decision_header: Option<String>,
 }
 

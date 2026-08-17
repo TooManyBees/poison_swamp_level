@@ -14,7 +14,7 @@ pub struct Classifier {
 
     asns_db: Option<maxminddb::Reader<Vec<u8>>>,
     unwanted_asns: Vec<u32>,
-    robots_matcher: Option<Matcher>,
+    unwanted_agents: Option<Matcher>,
     // trusted_ips: Vec<String>, // FIXME
     // trusted_paths: Vec<String>,
     // trusted_agents: Vec<String>,
@@ -45,12 +45,23 @@ impl Classifier {
             // TODO: warn that asns can't be looked up
         }
 
-        let robots_matcher = config
+        let robots_json = config
             .classifier
             .robots_json_path
             .as_ref()
             .map(load_robots_json)
             .transpose()?;
+
+        let mut unwanted_agents = config.classifier.unwanted_agents.clone();
+        if let Some(robots) = robots_json {
+            unwanted_agents.extend_from_slice(&robots);
+        }
+
+        let unwanted_agents = if !unwanted_agents.is_empty() {
+            Some(Matcher::new(unwanted_agents)?)
+        } else {
+            None
+        };
 
         Ok(Classifier {
             poisons: config.poisons.clone(),
@@ -58,7 +69,7 @@ impl Classifier {
 
             asns_db,
             unwanted_asns,
-            robots_matcher,
+            unwanted_agents,
             // trusted_ips: vec![],
             // trusted_paths: vec![],
             // trusted_agents: vec![],
@@ -110,7 +121,7 @@ impl Classifier {
 
     fn unwanted_agent<'r, B>(&self, req: &'r Request<B>) -> Option<&'r str> {
         if let Some((matcher, user_agent)) = self
-            .robots_matcher
+            .unwanted_agents
             .as_ref()
             .zip(req.headers().get(USER_AGENT).and_then(|h| h.to_str().ok()))
         {
@@ -188,7 +199,12 @@ impl From<RobotsJsonError> for ClassifierError {
         match e {
             RobotsJsonError::Io(e) => ClassifierError::Io(e),
             RobotsJsonError::Json(e) => ClassifierError::Json(e),
-            RobotsJsonError::Matcher(e) => ClassifierError::Matcher(e),
         }
+    }
+}
+
+impl From<BuildError> for ClassifierError {
+    fn from(e: BuildError) -> ClassifierError {
+        ClassifierError::Matcher(e)
     }
 }

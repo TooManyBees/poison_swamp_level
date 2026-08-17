@@ -1,19 +1,16 @@
-use super::matcher::Matcher;
-use aho_corasick::BuildError;
 use serde::de::{Deserialize, Deserializer, IgnoredAny, MapAccess, Visitor};
 use std::{fmt, fs::File, path::Path};
 
-pub fn load_robots_json<P: AsRef<Path>>(path: P) -> Result<Matcher, RobotsJsonError> {
+pub fn load_robots_json<P: AsRef<Path>>(path: P) -> Result<Vec<String>, RobotsJsonError> {
     let f = File::open(path)?;
     let robots: UserAgents = serde_json::from_reader(f)?;
-    Ok(Matcher::new(robots.0)?)
+    Ok(robots.0)
 }
 
 #[derive(Debug)]
 pub enum RobotsJsonError {
     Io(std::io::Error),
     Json(serde_json::Error),
-    Matcher(BuildError),
 }
 
 impl From<std::io::Error> for RobotsJsonError {
@@ -25,12 +22,6 @@ impl From<std::io::Error> for RobotsJsonError {
 impl From<serde_json::Error> for RobotsJsonError {
     fn from(e: serde_json::Error) -> RobotsJsonError {
         RobotsJsonError::Json(e)
-    }
-}
-
-impl From<BuildError> for RobotsJsonError {
-    fn from(e: BuildError) -> RobotsJsonError {
-        RobotsJsonError::Matcher(e)
     }
 }
 
