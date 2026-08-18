@@ -37,6 +37,10 @@ impl Corpus {
             state,
         }
     }
+
+    pub fn size(&self) -> (usize, usize) {
+        (self.text.len(), self.map.values().map(|vs| vs.len()).sum())
+    }
 }
 
 pub type State = (Substring, Substring);

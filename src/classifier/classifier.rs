@@ -8,6 +8,7 @@ use http::{
 };
 use maxminddb::{MaxMindDbError, Reader, geoip2::Asn};
 use std::net::IpAddr;
+use std::time::Instant;
 
 #[derive(Debug)]
 pub struct Classifier {
@@ -35,17 +36,19 @@ impl Classifier {
             })
             .transpose()?;
 
-        let asns_db = config
-            .classifier
-            .asns_db_path
-            .as_ref()
-            .map(Reader::open_readfile)
-            .transpose()?;
+        let asns_db = if let Some(path) = config.classifier.asns_db_path.as_ref() {
+            let then = Instant::now();
+            let db = Reader::open_readfile(path)?;
+            log::debug!("Read ANSs database in {}ms", then.elapsed().as_millis());
+            Some(db)
+        } else {
+            None
+        };
 
         let unwanted_asns = config.classifier.unwanted_asns.clone();
 
         if !unwanted_asns.is_empty() && asns_db.is_none() {
-            // TODO: warn that asns can't be looked up
+            log::warn!("ASNs will not be detected because ANS database was not provided");
         }
 
         let robots_json = config
@@ -61,13 +64,25 @@ impl Classifier {
         }
 
         let unwanted_agents = if !unwanted_agents.is_empty() {
-            Some(Matcher::new(unwanted_agents)?)
+            let then = Instant::now();
+            let matcher = Matcher::new(unwanted_agents)?;
+            log::debug!(
+                "Created unwanted agents matcher in {}ms",
+                then.elapsed().as_millis()
+            );
+            Some(matcher)
         } else {
             None
         };
 
         let trusted_agents = if !config.classifier.trusted_agents.is_empty() {
-            Some(Matcher::new(config.classifier.trusted_agents.clone())?)
+            let then = Instant::now();
+            let matcher = Matcher::new(config.classifier.trusted_agents.clone())?;
+            log::debug!(
+                "Created trusted agents matcher in {}ms",
+                then.elapsed().as_millis()
+            );
+            Some(matcher)
         } else {
             None
         };
@@ -138,8 +153,8 @@ impl Classifier {
         match self.asn(req) {
             Ok(Some(asn)) if self.unwanted_asns.contains(&asn) => Some(asn),
             Ok(_) => None,
-            Err(_e) => {
-                // TODO log an error
+            Err(e) => {
+                log::error!("Error looking up ASN: {}", e);
                 None
             }
         }

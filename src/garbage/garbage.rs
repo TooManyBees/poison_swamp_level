@@ -7,6 +7,7 @@ use std::collections::BTreeMap;
 use std::fmt;
 use std::fs;
 use std::ops::RangeInclusive;
+use std::time::Instant;
 use upon::{Engine, Template, Value};
 
 pub struct Garbage {
@@ -24,7 +25,15 @@ pub struct Garbage {
 
 impl Garbage {
     pub fn new(config: &Config) -> Result<Self, GarbageError> {
+        let now = Instant::now();
         let corpus = Corpus::from_files(&config.garbage.source_files)?;
+        let (byte_size, num_states) = corpus.size();
+        log::debug!(
+            "Trained garbage generator ({} bytes, {} states) in {}ms",
+            byte_size,
+            num_states,
+            now.elapsed().as_millis()
+        );
 
         let words = {
             let words_file = config

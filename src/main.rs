@@ -51,6 +51,10 @@ impl Service<Request<IncomingBody>> for App {
 
 #[tokio::main(flavor = "local")]
 async fn main() {
+    env_logger::builder()
+        .filter(None, log::LevelFilter::Debug)
+        .init();
+
     let config = Config::read_from_file("./config.kdl").unwrap();
     let classifier = Classifier::new(&config).unwrap();
     let garbage = Garbage::new(&config).unwrap();
@@ -64,6 +68,8 @@ async fn main() {
         ServerMode::Proxy => server_proxy,
         ServerMode::Preflight => server_preflight,
     };
+
+    log::info!("Listening on {}", config.server.listen);
 
     loop {
         let (stream, addr) = listener.accept().await.unwrap();
