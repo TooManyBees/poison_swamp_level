@@ -2,7 +2,7 @@ use super::config::{Classifier, Config, Garbage, Server, ServerMode};
 use http::status::StatusCode;
 use kdl::{KdlDocument, KdlEntry, KdlError, KdlNode};
 use std::ops::Deref;
-use std::{fmt, fs, path::Path};
+use std::{error::Error, fmt, fs, path::Path};
 
 pub fn load_config<P: AsRef<Path>>(path: P) -> Result<Config, ParseError> {
     let doc = load_file(path)?;
@@ -357,6 +357,19 @@ impl From<std::io::Error> for ParseError {
 impl From<KdlError> for ParseError {
     fn from(e: KdlError) -> ParseError {
         ParseError::Kdl(e)
+    }
+}
+
+impl Error for ParseError {}
+
+impl fmt::Display for ParseError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            ParseError::Io(e) => e.fmt(f),
+            ParseError::Kdl(e) => e.fmt(f),
+            ParseError::InvalidNode { message, .. } => write!(f, "{}", message),
+            ParseError::InvalidEntry { message, .. } => write!(f, "{}", message),
+        }
     }
 }
 
