@@ -10,14 +10,15 @@ use std::pin::Pin;
 use std::sync::Arc;
 use tokio::net::TcpListener;
 
-type ServiceFuture = Pin<Box<dyn Future<Output = Result<Response<String>, hyper::Error>> + Send>>;
+type HandlerOutput = Response<String>;
+type ServiceFuture = Pin<Box<dyn Future<Output = Result<HandlerOutput, hyper::Error>> + Send>>;
 
 #[derive(Debug, Clone)]
 struct App {
     client_ip: IpAddr,
     classifier: Arc<Classifier>,
     garbage: Arc<Garbage>,
-    handler: fn(&App, Request<IncomingBody>) -> ServiceFuture,
+    handler: fn(&App, Request<IncomingBody>) -> HandlerOutput,
     status_code_valid: http::StatusCode,
     status_code_spam: http::StatusCode,
 }
@@ -45,7 +46,8 @@ impl Service<Request<IncomingBody>> for App {
 
     fn call(&self, mut req: Request<IncomingBody>) -> Self::Future {
         req.extensions_mut().insert(self.client_ip);
-        (self.handler)(self, req)
+        let output = (self.handler)(self, req);
+        Box::pin(async { Ok(output) })
     }
 }
 
@@ -90,7 +92,7 @@ async fn main() {
     }
 }
 
-fn server_proxy(app: &App, req: Request<IncomingBody>) -> ServiceFuture {
+fn server_proxy(app: &App, req: Request<IncomingBody>) -> HandlerOutput {
     let resp = match app.classifier.classify(&req) {
         Classification::Valid(_) => Response::builder()
             .status(app.status_code_valid)
@@ -99,13 +101,13 @@ fn server_proxy(app: &App, req: Request<IncomingBody>) -> ServiceFuture {
         Classification::Spam(_) => app.garbage_response(&req),
     };
 
-    Box::pin(async { Ok(resp) })
+    resp
 }
 
-fn server_preflight(app: &App, req: Request<IncomingBody>) -> ServiceFuture {
+fn server_preflight(app: &App, req: Request<IncomingBody>) -> HandlerOutput {
     if let Some(TrustedDecision::Spam) = app.classifier.trusted_decision(&req) {
         let resp = app.garbage_response(&req);
-        return Box::pin(async { Ok(resp) });
+        return resp;
     }
 
     let preflight_status = match app.classifier.classify(&req) {
@@ -117,5 +119,5 @@ fn server_preflight(app: &App, req: Request<IncomingBody>) -> ServiceFuture {
         .status(preflight_status)
         .body("".into())
         .unwrap();
-    Box::pin(async { Ok(resp) })
+    resp
 }
