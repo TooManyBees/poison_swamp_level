@@ -1,8 +1,8 @@
 use super::config::{Classifier, Config, Garbage, Server, ServerMode};
-use http::status::{InvalidStatusCode, StatusCode};
+use http::status::StatusCode;
 use kdl::{KdlDocument, KdlEntry, KdlError, KdlNode};
 use std::ops::Deref;
-use std::{fmt, fs, net::AddrParseError, num::TryFromIntError, path::Path};
+use std::{fmt, fs, path::Path};
 
 pub fn load_config<P: AsRef<Path>>(path: P) -> Result<Config, ParseError> {
     let doc = load_file(path)?;
@@ -329,9 +329,6 @@ pub enum ParseError {
         offset: usize,
         message: String,
     },
-    InvalidSocketAddr(AddrParseError),
-    Int(TryFromIntError),
-    StatusCode,
 }
 
 impl ParseError {
@@ -360,24 +357,6 @@ impl From<std::io::Error> for ParseError {
 impl From<KdlError> for ParseError {
     fn from(e: KdlError) -> ParseError {
         ParseError::Kdl(e)
-    }
-}
-
-impl From<AddrParseError> for ParseError {
-    fn from(e: AddrParseError) -> ParseError {
-        ParseError::InvalidSocketAddr(e)
-    }
-}
-
-impl From<TryFromIntError> for ParseError {
-    fn from(e: TryFromIntError) -> ParseError {
-        ParseError::Int(e)
-    }
-}
-
-impl From<InvalidStatusCode> for ParseError {
-    fn from(_: InvalidStatusCode) -> ParseError {
-        ParseError::StatusCode
     }
 }
 
