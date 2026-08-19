@@ -4,6 +4,7 @@ use kdl::{KdlDocument, KdlEntry, KdlError, KdlNode};
 use log::LevelFilter;
 // use miette::{Diagnostic, LabeledSpan, SourceCode, SourceSpan};
 use std::{error::Error, fmt, fs, ops::Deref, path::Path, str::FromStr};
+use std::fmt::Write;
 
 pub fn load_config<P: AsRef<Path>>(path: P) -> Result<Config, ParseError> {
     let source = fs::read_to_string(path)?;
@@ -414,36 +415,67 @@ impl ParseError {
         }
     }
 
-    pub fn explain(&self) -> String {
+    pub fn explain(self) -> Explain {
         match self {
-            ParseError::Io(e) => e.to_string(),
-            ParseError::Kdl(e) => e.to_string(),
+            ParseError::Io(e) => Explain { location: None, message: e.to_string() },
+            ParseError::Kdl(e) => Explain { location: None, message: e.to_string() },
             ParseError::InvalidNode {
                 source,
                 span,
+                message,
                 ..
             } => {
-                let snippet = expand_source(source.as_deref(), *span).unwrap_or_default();
-                format!("{}\n{}", self, snippet)
+                Explain { location: source.zip(Some(span)), message: message.clone() }
             }
             ParseError::InvalidEntry {
                 source,
                 span,
-                ..
+                message,
             } => {
-                let snippet = expand_source(source.as_deref(), *span).unwrap_or_default();
-                format!("{}\n{}", self, snippet)
+                Explain { location: source.zip(Some(span)), message: message.clone() }
             }
         }
     }
 }
 
-fn expand_source(source: Option<&str>, (start, end): (usize, usize)) -> Option<&str> {
-    source.map(|s| {
-        let source_start = back_n_newlines(3, s, start);
-        let source_end = forward_n_newlines(3, s, end);
-        &s[source_start..source_end]
-    })
+pub struct Explain {
+    location: Option<(String, (usize, usize))>,
+    message: String,
+}
+
+#[derive(Debug)]
+struct Location {
+    start: usize,
+    end: usize,
+    line: usize,
+    col: usize,
+}
+
+impl fmt::Display for Explain {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        if let Some((ref source, (start, end))) = self.location {
+            let line = source[..start].lines().count().max(1);
+            let col = start - back_n_newlines(1, source, start);
+            let highlighted_span = &source[start..end];
+            let snippet = expand_source(&source, (start, end));
+            write!(f, "{} at {} on line {}:\n", self.message, highlighted_span, line)?;
+            let location = Location {
+                start,
+                end,
+                line,
+                col,
+            };
+            annotate_span(f, snippet, line.saturating_sub(2).max(1), location)
+        } else {
+            f.write_str(&self.message)
+        }
+    }
+}
+
+fn expand_source(source: &str, (start, end): (usize, usize)) -> &str {
+    let source_start = back_n_newlines(3, source, start);
+    let source_end = forward_n_newlines(3, source, end);
+    &source[source_start..source_end + 1]
 }
 
 fn back_n_newlines(count: usize, source: &str, from: usize) -> usize {
@@ -466,6 +498,22 @@ fn forward_n_newlines(count: usize, source: &str, from: usize) -> usize {
         }
     }
     idx - 1
+}
+
+fn annotate_span(f: &mut fmt::Formatter, source: &str, starting_line: usize, location: Location) -> fmt::Result {
+    let max_line = location.line + 2; // FIXME
+    let num_cols = max_line.checked_ilog10().unwrap_or(1).max(1) as usize;
+    f.write_char('\n')?;
+    for (n, line) in source.lines().enumerate() {
+        let line_no = n + starting_line;
+        write!(f, "{line_no:width$}  {line}\n", width = num_cols)?;
+        if line_no == location.line {
+            f.write_str(&" ".repeat(num_cols + 2 + location.col))?;
+            f.write_str(&"^".repeat(location.end - location.start))?;
+            f.write_char('\n')?;
+        }
+    }
+    Ok(())
 }
 
 impl From<std::io::Error> for ParseError {
