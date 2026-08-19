@@ -7,6 +7,7 @@ use http::{
     header::{HeaderName, USER_AGENT},
 };
 use maxminddb::{MaxMindDbError, Reader, geoip2::Asn};
+use std::fmt;
 use std::net::IpAddr;
 use std::time::Instant;
 
@@ -100,13 +101,13 @@ impl Classifier {
         })
     }
 
-    pub fn trusted_decision<B>(&self, req: &Request<B>) -> Option<TrustedDecision> {
+    pub fn trusted_decision<'r, B>(&self, req: &'r Request<B>) -> Option<Classification<'r>> {
         self.trusted_decision_header
             .as_ref()
             .and_then(|header| req.headers().get(header))
             .and_then(|decision| match decision.as_ref() {
-                b"valid" => Some(TrustedDecision::Valid),
-                b"spam" => Some(TrustedDecision::Spam),
+                b"valid" => Some(Classification::Valid(ValidReason::TrustedDecision)),
+                b"spam" => Some(Classification::Spam(SpamReason::TrustedDecision)),
                 _other => None, // FIXME account for this
             })
     }
@@ -207,16 +208,19 @@ fn match_agent<'r, B>(matcher: Option<&Matcher>, req: &'r Request<B>) -> Option<
     None
 }
 
-#[derive(Debug, Copy, Clone)]
-pub enum TrustedDecision {
-    Valid,
-    Spam,
-}
-
 #[derive(Debug)]
 pub enum Classification<'a> {
     Valid(ValidReason<'a>),
     Spam(SpamReason<'a>),
+}
+
+impl<'a> fmt::Display for Classification<'a> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Classification::Valid(r) => write!(f, "valid {r}"),
+            Classification::Spam(r) => write!(f, "spam {r}"),
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -225,6 +229,7 @@ pub enum ValidReason<'a> {
     TrustedIP(IpAddr),
     TrustedPath(&'a str),
     TrustedAgent(&'a str),
+    TrustedDecision,
 }
 
 #[derive(Debug)]
@@ -232,6 +237,30 @@ pub enum SpamReason<'a> {
     Poison(&'a str),
     UnwantedASN(u32),
     UnwantedAgent(&'a str),
+    TrustedDecision,
+}
+
+impl<'a> fmt::Display for ValidReason<'a> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            ValidReason::Default => f.write_str("default"),
+            ValidReason::TrustedIP(ip) => write!(f, "trusted IP {ip}"),
+            ValidReason::TrustedPath(path) => write!(f, "trusted path {path:?}"),
+            ValidReason::TrustedAgent(agent) => write!(f, "trusted agent {agent:?}"),
+            ValidReason::TrustedDecision => f.write_str("trusted decision header"),
+        }
+    }
+}
+
+impl<'a> fmt::Display for SpamReason<'a> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            SpamReason::Poison(p) => write!(f, "poison {p:?}"),
+            SpamReason::UnwantedASN(asn) => write!(f, "unwanted ASN {asn}"),
+            SpamReason::UnwantedAgent(agent) => write!(f, "unwanted agent {agent:?}"),
+            SpamReason::TrustedDecision => f.write_str("trusted decision header"),
+        }
+    }
 }
 
 #[derive(Debug)]

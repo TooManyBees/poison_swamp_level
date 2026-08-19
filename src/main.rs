@@ -2,35 +2,29 @@ use hyper::server::conn::http1;
 use hyper::service::Service;
 use hyper::{Request, Response, StatusCode, body::Incoming as IncomingBody};
 use hyper_util::rt::TokioIo;
-use poison_swamp_level::{
-    Classification, Classifier, Config, Garbage, ServerMode, TrustedDecision,
-};
+use poison_swamp_level::{Classification, Classifier, Config, Garbage, ServerMode};
 use std::net::IpAddr;
 use std::pin::Pin;
 use std::sync::Arc;
 use tokio::net::TcpListener;
 
-type HandlerOutput = Response<String>;
-type ServiceFuture = Pin<Box<dyn Future<Output = Result<HandlerOutput, hyper::Error>> + Send>>;
+type BodyType = Response<String>;
+type HandlerOutput<'r> = (Classification<'r>, BodyType);
+type ServiceFuture = Pin<Box<dyn Future<Output = Result<BodyType, hyper::Error>> + Send>>;
 
 #[derive(Debug, Clone)]
 struct App {
     client_ip: IpAddr,
     classifier: Arc<Classifier>,
     garbage: Arc<Garbage>,
-    handler: fn(&App, Request<IncomingBody>) -> HandlerOutput,
+    handler: for<'r> fn(&App, &'r Request<IncomingBody>) -> HandlerOutput<'r>,
     status_code_valid: http::StatusCode,
     status_code_spam: http::StatusCode,
 }
 
 impl App {
     fn garbage_response<B>(&self, req: &Request<B>) -> Response<String> {
-        let path = req
-            .uri()
-            .path_and_query()
-            .map(|pq| pq.as_str())
-            .unwrap_or(req.uri().path());
-
+        let path = request_path(&req);
         let body = self.garbage.render(path);
         Response::builder()
             .status(StatusCode::OK)
@@ -46,8 +40,14 @@ impl Service<Request<IncomingBody>> for App {
 
     fn call(&self, mut req: Request<IncomingBody>) -> Self::Future {
         req.extensions_mut().insert(self.client_ip);
-        let output = (self.handler)(self, req);
-        Box::pin(async { Ok(output) })
+        let (decision, resp) = (self.handler)(self, &req);
+        log::info!(
+            "Response {} {:?} decision {}",
+            resp.status().as_str(),
+            request_path(&req),
+            decision,
+        );
+        Box::pin(async { Ok(resp) })
     }
 }
 
@@ -92,32 +92,41 @@ async fn main() {
     }
 }
 
-fn server_proxy(app: &App, req: Request<IncomingBody>) -> HandlerOutput {
-    let resp = match app.classifier.classify(&req) {
-        Classification::Valid(_) => Response::builder()
-            .status(app.status_code_valid)
-            .body("".into())
-            .unwrap(),
-        Classification::Spam(_) => app.garbage_response(&req),
-    };
-
-    resp
+fn server_proxy<'r>(app: &App, req: &'r Request<IncomingBody>) -> HandlerOutput<'r> {
+    match app.classifier.classify(&req) {
+        decision @ Classification::Valid(_) => {
+            let resp = Response::builder()
+                .status(app.status_code_valid)
+                .body("".into())
+                .unwrap();
+            (decision, resp)
+        }
+        decision @ Classification::Spam(_) => (decision, app.garbage_response(&req)),
+    }
 }
 
-fn server_preflight(app: &App, req: Request<IncomingBody>) -> HandlerOutput {
-    if let Some(TrustedDecision::Spam) = app.classifier.trusted_decision(&req) {
+fn server_preflight<'r>(app: &App, req: &'r Request<IncomingBody>) -> HandlerOutput<'r> {
+    if let Some(d @ Classification::Valid(_)) = app.classifier.trusted_decision(&req) {
         let resp = app.garbage_response(&req);
-        return resp;
+        return (d, resp);
     }
 
-    let preflight_status = match app.classifier.classify(&req) {
-        Classification::Valid(_) => app.status_code_valid,
-        Classification::Spam(_) => app.status_code_spam,
+    let (decision, preflight_status) = match app.classifier.classify(&req) {
+        d @ Classification::Valid(_) => (d, app.status_code_valid),
+        d @ Classification::Spam(_) => (d, app.status_code_spam),
     };
 
     let resp = Response::builder()
         .status(preflight_status)
         .body("".into())
         .unwrap();
-    resp
+
+    (decision, resp)
+}
+
+fn request_path<B>(req: &Request<B>) -> &str {
+    req.uri()
+        .path_and_query()
+        .map(|pq| pq.as_str())
+        .unwrap_or(req.uri().path())
 }
