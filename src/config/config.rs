@@ -1,5 +1,6 @@
 use super::{ParseError, load_config};
 use http::StatusCode;
+use log::LevelFilter;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr, SocketAddrV4};
 use std::{ops::RangeInclusive, path::Path};
 
@@ -8,6 +9,7 @@ pub struct Config {
     pub classifier: Classifier,
     pub garbage: Garbage,
     pub server: Server,
+    pub logging: Logging,
 }
 
 impl Config {
@@ -121,4 +123,19 @@ impl Default for Server {
 pub enum ServerMode {
     Proxy,
     Preflight,
+}
+
+#[derive(Debug)]
+pub struct Logging {
+    pub level: LevelFilter,
+    pub request_handler: bool,
+}
+
+impl Default for Logging {
+    fn default() -> Logging {
+        Logging {
+            level: LevelFilter::Off,
+            request_handler: false,
+        }
+    }
 }

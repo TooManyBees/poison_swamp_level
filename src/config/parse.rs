@@ -1,8 +1,8 @@
-use super::config::{Classifier, Config, Garbage, Server, ServerMode};
+use super::config::{Classifier, Config, Garbage, Logging, Server, ServerMode};
 use http::status::StatusCode;
 use kdl::{KdlDocument, KdlEntry, KdlError, KdlNode};
-use std::ops::Deref;
-use std::{error::Error, fmt, fs, path::Path};
+use log::LevelFilter;
+use std::{error::Error, fmt, fs, ops::Deref, path::Path, str::FromStr};
 
 pub fn load_config<P: AsRef<Path>>(path: P) -> Result<Config, ParseError> {
     let doc = load_file(path)?;
@@ -30,6 +30,9 @@ fn parse_doc(doc: KdlDocument) -> Result<Config, ParseError> {
             "garbage" => {
                 config.garbage = node.parse_garbage()?;
             }
+            "logging" => {
+                config.logging = node.parse_logging()?;
+            }
             _ => {}
         }
     }
@@ -43,6 +46,10 @@ trait Parseable {
     fn parse_classifier(&self) -> Result<Classifier, ParseError>;
 
     fn parse_garbage(&self) -> Result<Garbage, ParseError>;
+
+    fn parse_logging(&self) -> Result<Logging, ParseError>;
+
+    fn one_booleanish_entry(&self) -> Result<bool, ParseError>;
 
     fn one_string_entry<'a>(&'a self) -> Result<StringEntry<'a>, ParseError>;
 
@@ -108,10 +115,7 @@ impl Parseable for KdlNode {
                     }
                     if let Some((entry, status)) = child.int_prop_with_entry::<u16>("spam")? {
                         server.status_code_spam = StatusCode::from_u16(status).map_err(|_| {
-                            ParseError::from_entry(
-                                entry,
-                                "invalid HTTP status code".into(),
-                            )
+                            ParseError::from_entry(entry, "invalid HTTP status code".into())
                         })?;
                     }
                 }
@@ -229,6 +233,50 @@ impl Parseable for KdlNode {
         }
 
         Ok(garbage)
+    }
+
+    fn parse_logging(&self) -> Result<Logging, ParseError> {
+        let mut logging = Logging::default();
+
+        for child in self.iter_children() {
+            match child.name().value() {
+                "level" => {
+                    let entry = child.one_string_entry()?;
+                    logging.level = match LevelFilter::from_str(entry.as_ref()) {
+                        Ok(level) => level,
+                        Err(_) => {
+                            return Err(ParseError::from_entry(&entry, "invalid log level".into()));
+                        }
+                    };
+                }
+                "request-handler" => {
+                    logging.request_handler = child.one_booleanish_entry()?;
+                }
+                _ => {}
+            }
+        }
+
+        Ok(logging)
+    }
+
+    fn one_booleanish_entry(&self) -> Result<bool, ParseError> {
+        self.entry(0)
+            .and_then(|e| {
+                if let Some(b) = e.value().as_bool() {
+                    return Some(b);
+                }
+                match e.value().as_string() {
+                    Some("on") => return Some(true),
+                    Some("true") => return Some(true),
+                    Some("off") => return Some(false),
+                    Some("false") => return Some(false),
+                    _ => {}
+                }
+                None
+            })
+            .ok_or_else(|| {
+                ParseError::from_node(self, "must have one boolean(ish) argument".into())
+            })
     }
 
     fn one_string_entry<'a>(&'a self) -> Result<StringEntry<'a>, ParseError> {

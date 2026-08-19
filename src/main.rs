@@ -20,6 +20,7 @@ struct App {
     handler: for<'r> fn(&App, &'r Request<IncomingBody>) -> HandlerOutput<'r>,
     status_code_valid: http::StatusCode,
     status_code_spam: http::StatusCode,
+    logging: bool,
 }
 
 impl App {
@@ -41,23 +42,26 @@ impl Service<Request<IncomingBody>> for App {
     fn call(&self, mut req: Request<IncomingBody>) -> Self::Future {
         req.extensions_mut().insert(self.client_ip);
         let (decision, resp) = (self.handler)(self, &req);
-        log::info!(
-            "Response {} {:?} decision {}",
-            resp.status().as_str(),
-            request_path(&req),
-            decision,
-        );
+        if self.logging {
+            log::info!(
+                "Response {} {:?} decision {}",
+                resp.status().as_str(),
+                request_path(&req),
+                decision,
+            );
+        }
         Box::pin(async { Ok(resp) })
     }
 }
 
 #[tokio::main(flavor = "local")]
 async fn main() {
+    let config = Config::read_from_file("./config.kdl").unwrap();
+
     env_logger::builder()
-        .filter(None, log::LevelFilter::Debug)
+        .filter(None, config.logging.level)
         .init();
 
-    let config = Config::read_from_file("./config.kdl").unwrap();
     let classifier = Classifier::new(&config).unwrap();
     let garbage = Garbage::new(&config).unwrap();
 
@@ -83,6 +87,7 @@ async fn main() {
             handler,
             status_code_valid: config.server.status_code_valid,
             status_code_spam: config.server.status_code_spam,
+            logging: config.logging.request_handler,
         };
         tokio::task::spawn(async move {
             if let Err(e) = http1::Builder::new().serve_connection(io, app).await {
