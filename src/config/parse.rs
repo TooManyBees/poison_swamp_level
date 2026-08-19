@@ -2,18 +2,19 @@ use super::config::{Classifier, Config, Garbage, Logging, Server, ServerMode};
 use http::status::StatusCode;
 use kdl::{KdlDocument, KdlEntry, KdlError, KdlNode};
 use log::LevelFilter;
+// use miette::{Diagnostic, LabeledSpan, SourceCode, SourceSpan};
 use std::{error::Error, fmt, fs, ops::Deref, path::Path, str::FromStr};
 
 pub fn load_config<P: AsRef<Path>>(path: P) -> Result<Config, ParseError> {
-    let doc = load_file(path)?;
-    let config = parse_doc(doc)?;
-    Ok(config)
-}
-
-fn load_file<P: AsRef<Path>>(path: P) -> Result<KdlDocument, ParseError> {
-    let s = fs::read_to_string(path)?;
-    let doc = s.parse::<KdlDocument>()?;
-    Ok(doc)
+    let source = fs::read_to_string(path)?;
+    let doc = source.parse::<KdlDocument>()?;
+    match parse_doc(doc) {
+        Ok(config) => Ok(config),
+        Err(mut e) => {
+            e.set_source_code(source);
+            Err(e)
+        }
+    }
 }
 
 fn parse_doc(doc: KdlDocument) -> Result<Config, ParseError> {
@@ -370,30 +371,101 @@ pub enum ParseError {
     Kdl(KdlError),
     InvalidNode {
         field: String,
-        offset: usize,
+        source: Option<String>,
+        span: (usize, usize),
         message: String,
     },
     InvalidEntry {
-        offset: usize,
+        source: Option<String>,
+        span: (usize, usize),
         message: String,
     },
 }
 
 impl ParseError {
     fn from_node(node: &KdlNode, message: String) -> ParseError {
+        let span = node.span();
         ParseError::InvalidNode {
             field: node.name().value().to_string(),
-            offset: node.span().offset(),
+            source: None,
+            span: (span.offset(), span.offset() + span.len()),
             message,
         }
     }
 
     fn from_entry(entry: &KdlEntry, message: String) -> ParseError {
+        let span = entry.span();
         ParseError::InvalidEntry {
-            offset: entry.span().offset(),
+            source: None,
+            span: (span.offset(), span.offset() + span.len()),
             message,
         }
     }
+
+    fn set_source_code(&mut self, new_source: String) {
+        match self {
+            ParseError::InvalidEntry { source, .. } => {
+                source.replace(new_source);
+            }
+            ParseError::InvalidNode { source, .. } => {
+                source.replace(new_source);
+            }
+            _ => {}
+        }
+    }
+
+    pub fn explain(&self) -> String {
+        match self {
+            ParseError::Io(e) => e.to_string(),
+            ParseError::Kdl(e) => e.to_string(),
+            ParseError::InvalidNode {
+                source,
+                span,
+                ..
+            } => {
+                let snippet = expand_source(source.as_deref(), *span).unwrap_or_default();
+                format!("{}\n{}", self, snippet)
+            }
+            ParseError::InvalidEntry {
+                source,
+                span,
+                ..
+            } => {
+                let snippet = expand_source(source.as_deref(), *span).unwrap_or_default();
+                format!("{}\n{}", self, snippet)
+            }
+        }
+    }
+}
+
+fn expand_source(source: Option<&str>, (start, end): (usize, usize)) -> Option<&str> {
+    source.map(|s| {
+        let source_start = back_n_newlines(3, s, start);
+        let source_end = forward_n_newlines(3, s, end);
+        &s[source_start..source_end]
+    })
+}
+
+fn back_n_newlines(count: usize, source: &str, from: usize) -> usize {
+    let mut idx = from;
+    for _ in 0..count {
+        match source[..idx].rfind('\n') {
+            Some(i) => idx = i,
+            None => return 0,
+        }
+    }
+    idx + 1
+}
+
+fn forward_n_newlines(count: usize, source: &str, from: usize) -> usize {
+    let mut idx = from;
+    for _ in 0..count {
+        match source[idx..].find('\n') {
+            Some(i) => idx = idx + i + 1,
+            None => return source.len(),
+        }
+    }
+    idx - 1
 }
 
 impl From<std::io::Error> for ParseError {
@@ -415,15 +487,36 @@ impl fmt::Display for ParseError {
         match self {
             ParseError::Io(e) => e.fmt(f),
             ParseError::Kdl(e) => e.fmt(f),
-            ParseError::InvalidNode { message, .. } => write!(f, "{}", message),
-            ParseError::InvalidEntry { message, .. } => write!(f, "{}", message),
+            ParseError::InvalidNode {
+                message,
+                source,
+                span,
+                ..
+            } => {
+                if let Some(source) = source {
+                    write!(f, "{} at {}", message, &source[span.0..span.1])
+                } else {
+                    f.write_str(message)
+                }
+            }
+            ParseError::InvalidEntry {
+                message,
+                source,
+                span,
+            } => {
+                if let Some(source) = source {
+                    write!(f, "{} at {}", message, &source[span.0..span.1])
+                } else {
+                    f.write_str(message)
+                }
+            }
         }
     }
 }
 
 #[cfg(test)]
 mod test {
-    use super::{ParseError, Parseable};
+    use super::{ParseError, Parseable, back_n_newlines, forward_n_newlines};
     use kdl::KdlDocument;
     use std::assert_matches;
 
@@ -469,5 +562,64 @@ mod test {
             numbers.int_seq::<u8>(),
             Err(ParseError::InvalidEntry { .. })
         );
+    }
+
+    #[test]
+    fn test_back_and_forward_newlines() {
+        let haystack = "Line 1
+Line 2
+Line 3
+Line 4
+Line 5
+Line 6
+Line 7
+Line 8
+Line 9
+Line 10";
+        {
+            let needle = "5";
+            let span_start = haystack.find(needle).unwrap();
+            let span_end = span_start + needle.len();
+
+            let start = back_n_newlines(3, haystack, span_start);
+            let end = forward_n_newlines(3, haystack, span_end);
+
+            let expected_result = "Line 3
+Line 4
+Line 5
+Line 6
+Line 7";
+            assert_eq!(expected_result, &haystack[start..end]);
+        }
+
+        {
+            let needle = "2";
+            let span_start = haystack.find(needle).unwrap();
+            let span_end = span_start + needle.len();
+
+            let start = back_n_newlines(3, haystack, span_start);
+            let end = forward_n_newlines(3, haystack, span_end);
+
+            let expected_result = "Line 1
+Line 2
+Line 3
+Line 4";
+            assert_eq!(expected_result, &haystack[start..end]);
+        }
+
+        {
+            let needle = "9";
+            let span_start = haystack.find(needle).unwrap();
+            let span_end = span_start + needle.len();
+
+            let start = back_n_newlines(3, haystack, span_start);
+            let end = forward_n_newlines(3, haystack, span_end);
+
+            let expected_result = "Line 7
+Line 8
+Line 9
+Line 10";
+            assert_eq!(expected_result, &haystack[start..end]);
+        }
     }
 }

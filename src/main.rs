@@ -56,7 +56,13 @@ impl Service<Request<IncomingBody>> for App {
 
 #[tokio::main(flavor = "local")]
 async fn main() {
-    let config = Config::read_from_file("./config.kdl").unwrap();
+    let config = match Config::read_from_file("./config.kdl") {
+        Ok(config) => config,
+        Err(e) => {
+            eprintln!("{}", e.explain());
+            std::process::exit(1);
+        }
+    };
 
     env_logger::builder()
         .filter(None, config.logging.level)
