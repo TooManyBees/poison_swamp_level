@@ -2,9 +2,8 @@ use super::config::{Classifier, Config, Garbage, Logging, Server, ServerMode};
 use http::status::StatusCode;
 use kdl::{KdlDocument, KdlEntry, KdlError, KdlNode};
 use log::LevelFilter;
-// use miette::{Diagnostic, LabeledSpan, SourceCode, SourceSpan};
-use std::{error::Error, fmt, fs, ops::Deref, path::Path, str::FromStr};
 use std::fmt::Write;
+use std::{error::Error, fmt, fs, ops::Deref, path::Path, str::FromStr};
 
 pub fn load_config<P: AsRef<Path>>(path: P) -> Result<Config, ParseError> {
     let source = fs::read_to_string(path)?;
@@ -262,32 +261,41 @@ impl Parseable for KdlNode {
     }
 
     fn one_booleanish_entry(&self) -> Result<bool, ParseError> {
-        self.entry(0)
-            .and_then(|e| {
-                if let Some(b) = e.value().as_bool() {
-                    return Some(b);
-                }
-                match e.value().as_string() {
-                    Some("on") => return Some(true),
-                    Some("true") => return Some(true),
-                    Some("off") => return Some(false),
-                    Some("false") => return Some(false),
-                    _ => {}
-                }
-                None
-            })
-            .ok_or_else(|| {
-                ParseError::from_node(self, "must have one boolean(ish) argument".into())
-            })
+        let entry = self
+            .entry(0)
+            .ok_or_else(|| ParseError::from_node_name(self, "missing argument".into()))?;
+
+        if let Some(b) = entry.value().as_bool() {
+            return Ok(b);
+        }
+        match entry.value().as_string() {
+            Some("on") => return Ok(true),
+            Some("true") => return Ok(true),
+            Some("off") => return Ok(false),
+            Some("false") => return Ok(false),
+            _ => Err(ParseError::from_entry(
+                entry,
+                "must have one boolean(ish) argument".into(),
+            )),
+        }
     }
 
     fn one_string_entry<'a>(&'a self) -> Result<StringEntry<'a>, ParseError> {
-        self.entry(0)
-            .and_then(|e| match e.value().as_string() {
-                Some(s) => Some(StringEntry(e, s)),
-                None => None,
-            })
-            .ok_or_else(|| ParseError::from_node(self, "must have one string argument".into()))
+        let entry = self
+            .entry(0)
+            .ok_or_else(|| ParseError::from_node_name(self, "missing argument".into()))?;
+
+        if let Some(string) = entry.value().as_string() {
+            Ok(StringEntry(entry, string))
+        } else {
+            Err(ParseError::from_entry(
+                entry,
+                format!(
+                    "{} block must have one string argument",
+                    self.name().value().to_string()
+                ),
+            ))
+        }
     }
 
     fn one_string_arg(&self) -> Result<String, ParseError> {
@@ -346,7 +354,7 @@ impl Parseable for KdlNode {
             if entry.name().is_some() {
                 return Err(ParseError::from_entry(
                     entry,
-                    "must not be a namedj property".into(),
+                    "must not be a named property".into(),
                 ));
             }
             let int = entry
@@ -370,13 +378,12 @@ impl Parseable for KdlNode {
 pub enum ParseError {
     Io(std::io::Error),
     Kdl(KdlError),
-    InvalidNode {
-        field: String,
+    InvalidBlock {
         source: Option<String>,
         span: (usize, usize),
         message: String,
     },
-    InvalidEntry {
+    InvalidSpan {
         source: Option<String>,
         span: (usize, usize),
         message: String,
@@ -386,17 +393,26 @@ pub enum ParseError {
 impl ParseError {
     fn from_node(node: &KdlNode, message: String) -> ParseError {
         let span = node.span();
-        ParseError::InvalidNode {
-            field: node.name().value().to_string(),
+        ParseError::InvalidBlock {
             source: None,
             span: (span.offset(), span.offset() + span.len()),
             message,
         }
     }
 
+    fn from_node_name(node: &KdlNode, message: String) -> ParseError {
+        let span = node.span();
+        let name = node.name().value();
+        ParseError::InvalidSpan {
+            source: None,
+            span: (span.offset(), span.offset() + name.len()),
+            message,
+        }
+    }
+
     fn from_entry(entry: &KdlEntry, message: String) -> ParseError {
         let span = entry.span();
-        ParseError::InvalidEntry {
+        ParseError::InvalidSpan {
             source: None,
             span: (span.offset(), span.offset() + span.len()),
             message,
@@ -405,10 +421,10 @@ impl ParseError {
 
     fn set_source_code(&mut self, new_source: String) {
         match self {
-            ParseError::InvalidEntry { source, .. } => {
+            ParseError::InvalidSpan { source, .. } => {
                 source.replace(new_source);
             }
-            ParseError::InvalidNode { source, .. } => {
+            ParseError::InvalidBlock { source, .. } => {
                 source.replace(new_source);
             }
             _ => {}
@@ -417,23 +433,31 @@ impl ParseError {
 
     pub fn explain(self) -> Explain {
         match self {
-            ParseError::Io(e) => Explain { location: None, message: e.to_string() },
-            ParseError::Kdl(e) => Explain { location: None, message: e.to_string() },
-            ParseError::InvalidNode {
+            ParseError::Io(e) => Explain {
+                location: None,
+                message: e.to_string(),
+            },
+            ParseError::Kdl(e) => Explain {
+                location: None,
+                message: e.to_string(),
+            },
+            ParseError::InvalidBlock {
                 source,
                 span,
                 message,
                 ..
-            } => {
-                Explain { location: source.zip(Some(span)), message: message.clone() }
-            }
-            ParseError::InvalidEntry {
+            } => Explain {
+                location: source.zip(Some(span)),
+                message: message.clone(),
+            },
+            ParseError::InvalidSpan {
                 source,
                 span,
                 message,
-            } => {
-                Explain { location: source.zip(Some(span)), message: message.clone() }
-            }
+            } => Explain {
+                location: source.zip(Some(span)),
+                message: message.clone(),
+            },
         }
     }
 }
@@ -458,7 +482,11 @@ impl fmt::Display for Explain {
             let col = start - back_n_newlines(1, source, start);
             let highlighted_span = &source[start..end];
             let snippet = expand_source(&source, (start, end));
-            write!(f, "{} at {} on line {}:\n", self.message, highlighted_span, line)?;
+            write!(
+                f,
+                "{} at {} on line {}:\n",
+                self.message, highlighted_span, line
+            )?;
             let location = Location {
                 start,
                 end,
@@ -500,7 +528,12 @@ fn forward_n_newlines(count: usize, source: &str, from: usize) -> usize {
     idx - 1
 }
 
-fn annotate_span(f: &mut fmt::Formatter, source: &str, starting_line: usize, location: Location) -> fmt::Result {
+fn annotate_span(
+    f: &mut fmt::Formatter,
+    source: &str,
+    starting_line: usize,
+    location: Location,
+) -> fmt::Result {
     let max_line = location.line + 2; // FIXME
     let num_cols = max_line.checked_ilog10().unwrap_or(1).max(1) as usize;
     f.write_char('\n')?;
@@ -535,7 +568,7 @@ impl fmt::Display for ParseError {
         match self {
             ParseError::Io(e) => e.fmt(f),
             ParseError::Kdl(e) => e.fmt(f),
-            ParseError::InvalidNode {
+            ParseError::InvalidBlock {
                 message,
                 source,
                 span,
@@ -547,7 +580,7 @@ impl fmt::Display for ParseError {
                     f.write_str(message)
                 }
             }
-            ParseError::InvalidEntry {
+            ParseError::InvalidSpan {
                 message,
                 source,
                 span,
@@ -586,30 +619,21 @@ mod test {
     fn int_seq_rejects_named_props() {
         let doc: KdlDocument = "numbers 1 2 3 four=4".parse().unwrap();
         let numbers = doc.nodes().first().unwrap();
-        assert_matches!(
-            numbers.int_seq::<u8>(),
-            Err(ParseError::InvalidEntry { .. })
-        );
+        assert_matches!(numbers.int_seq::<u8>(), Err(ParseError::InvalidSpan { .. }));
     }
 
     #[test]
     fn int_seq_rejects_string_props() {
         let doc: KdlDocument = "numbers 1 two three 4".parse().unwrap();
         let numbers = doc.nodes().first().unwrap();
-        assert_matches!(
-            numbers.int_seq::<u8>(),
-            Err(ParseError::InvalidEntry { .. })
-        );
+        assert_matches!(numbers.int_seq::<u8>(), Err(ParseError::InvalidSpan { .. }));
     }
 
     #[test]
     fn int_seq_rejects_incompatible_numbers() {
         let doc: KdlDocument = "numbers 254 255 256 257".parse().unwrap();
         let numbers = doc.nodes().first().unwrap();
-        assert_matches!(
-            numbers.int_seq::<u8>(),
-            Err(ParseError::InvalidEntry { .. })
-        );
+        assert_matches!(numbers.int_seq::<u8>(), Err(ParseError::InvalidSpan { .. }));
     }
 
     #[test]
