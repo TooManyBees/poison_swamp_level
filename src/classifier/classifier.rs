@@ -104,11 +104,16 @@ impl Classifier {
     pub fn trusted_decision<'r, B>(&self, req: &'r Request<B>) -> Option<Classification<'r>> {
         self.trusted_decision_header
             .as_ref()
-            .and_then(|header| req.headers().get(header))
-            .and_then(|decision| match decision.as_ref() {
-                b"valid" => Some(Classification::Valid(ValidReason::TrustedDecision)),
-                b"spam" => Some(Classification::Spam(SpamReason::TrustedDecision)),
+            .and_then(|header_name| req.headers().get(header_name))
+            .and_then(|header_value| match header_value.as_ref() {
+                b"valid" => Some(Decision::Valid(ValidReason::TrustedDecision)),
+                b"spam" => Some(Decision::Spam(SpamReason::TrustedDecision)),
                 _other => None, // FIXME account for this
+            })
+            .map(|decision| {
+                let mut classification = Classification::default();
+                classification.decision = decision;
+                classification
             })
     }
 
@@ -116,15 +121,6 @@ impl Classifier {
         let path = req.uri().path();
         if self.trusted_paths.iter().any(|p| p == path) {
             return Some(path);
-        }
-        None
-    }
-
-    fn trusted_ip<B>(&self, req: &Request<B>) -> Option<IpAddr> {
-        if let Some(remote_ip) = req.extensions().get::<IpAddr>().copied() {
-            if self.trusted_ips.contains(&remote_ip) {
-                return Some(remote_ip);
-            }
         }
         None
     }
@@ -139,20 +135,21 @@ impl Classifier {
         None
     }
 
-    fn asn<B>(&self, req: &Request<B>) -> Result<Option<u32>, MaxMindDbError> {
-        let remote_ip = req.extensions().get::<IpAddr>().copied();
-        if let Some((db, ip_addr)) = self.asns_db.as_ref().zip(remote_ip) {
-            return Ok(db
-                .lookup(ip_addr)?
-                .decode::<Asn>()?
-                .and_then(|asn| asn.autonomous_system_number));
-        }
-        Ok(None)
+    fn lookup_asn(
+        db: &maxminddb::Reader<Vec<u8>>,
+        ip: IpAddr,
+    ) -> Result<Option<u32>, MaxMindDbError> {
+        Ok(db
+            .lookup(ip)?
+            .decode::<Asn>()?
+            .and_then(|asn| asn.autonomous_system_number))
     }
 
-    fn unwanted_asn<B>(&self, req: &Request<B>) -> Option<u32> {
-        match self.asn(req) {
-            Ok(Some(asn)) if self.unwanted_asns.contains(&asn) => Some(asn),
+    fn asn<B>(&self, req: &Request<B>) -> Option<u32> {
+        let db = self.asns_db.as_ref()?;
+        let remote_ip = req.extensions().get::<IpAddr>().copied()?;
+        match Classifier::lookup_asn(db, remote_ip) {
+            Ok(Some(asn)) => Some(asn),
             Ok(_) => None,
             Err(e) => {
                 log::error!("Error looking up ASN: {}", e);
@@ -161,45 +158,58 @@ impl Classifier {
         }
     }
 
-    fn trusted_agent<'r, B>(&self, req: &'r Request<B>) -> Option<&'r str> {
+    fn trusted_agent<'r>(&self, req: Option<&'r str>) -> Option<&'r str> {
         match_agent(self.trusted_agents.as_ref(), req)
     }
 
-    fn unwanted_agent<'r, B>(&self, req: &'r Request<B>) -> Option<&'r str> {
+    fn unwanted_agent<'r>(&self, req: Option<&'r str>) -> Option<&'r str> {
         match_agent(self.unwanted_agents.as_ref(), req)
     }
 
     pub fn classify<'r, B>(&self, req: &'r Request<B>) -> Classification<'r> {
+        let mut info = Classification {
+            ip: req.extensions().get::<IpAddr>().copied(),
+            poison: self.poisoned_path(req),
+            asn: self.asn(req),
+            agent: req.headers().get(USER_AGENT).and_then(|h| h.to_str().ok()),
+            decision: Decision::Valid(ValidReason::Default),
+        };
+
         if let Some(path) = self.trusted_path(req) {
-            return Classification::Valid(ValidReason::TrustedPath(path));
+            info.decision = Decision::Valid(ValidReason::TrustedPath(path));
+            return info;
         }
 
-        if let Some(ip) = self.trusted_ip(req) {
-            return Classification::Valid(ValidReason::TrustedIP(ip));
+        if let Some(ip) = info.ip.filter(|ip| self.trusted_ips.contains(&ip)) {
+            info.decision = Decision::Valid(ValidReason::TrustedIP(ip));
+            return info;
         }
 
-        if let Some(agent) = self.trusted_agent(req) {
-            return Classification::Valid(ValidReason::TrustedAgent(agent));
+        if let Some(agent) = self.trusted_agent(info.agent) {
+            info.decision = Decision::Valid(ValidReason::TrustedAgent(agent));
+            return info;
         }
 
-        if let Some(poison) = self.poisoned_path(req) {
-            return Classification::Spam(SpamReason::Poison(poison));
+        if let Some(poison) = info.poison {
+            info.decision = Decision::Spam(SpamReason::Poison(poison));
+            return info;
         }
 
-        if let Some(agent) = self.unwanted_agent(req) {
-            return Classification::Spam(SpamReason::UnwantedAgent(agent));
+        if let Some(agent) = self.unwanted_agent(info.agent) {
+            info.decision = Decision::Spam(SpamReason::UnwantedAgent(agent));
+            return info;
         }
 
-        if let Some(asn) = self.unwanted_asn(req) {
-            return Classification::Spam(SpamReason::UnwantedASN(asn));
+        if let Some(asn) = info.asn.filter(|asn| self.unwanted_asns.contains(&asn)) {
+            info.decision = Decision::Spam(SpamReason::UnwantedASN(asn));
+            return info;
         }
 
-        Classification::Valid(ValidReason::Default)
+        info
     }
 }
 
-fn match_agent<'r, B>(matcher: Option<&Matcher>, req: &'r Request<B>) -> Option<&'r str> {
-    let header_value = req.headers().get(USER_AGENT).and_then(|h| h.to_str().ok());
+fn match_agent<'r>(matcher: Option<&Matcher>, header_value: Option<&'r str>) -> Option<&'r str> {
     if let Some((matcher, user_agent)) = matcher.zip(header_value) {
         if let Some(m) = matcher.find(user_agent) {
             return Some(&user_agent[m.range()]);
@@ -208,17 +218,32 @@ fn match_agent<'r, B>(matcher: Option<&Matcher>, req: &'r Request<B>) -> Option<
     None
 }
 
+#[derive(Debug, Default)]
+pub struct Classification<'a> {
+    pub ip: Option<IpAddr>,
+    pub agent: Option<&'a str>,
+    pub asn: Option<u32>,
+    pub poison: Option<&'a str>,
+    pub decision: Decision<'a>,
+}
+
 #[derive(Debug)]
-pub enum Classification<'a> {
+pub enum Decision<'a> {
     Valid(ValidReason<'a>),
     Spam(SpamReason<'a>),
 }
 
-impl<'a> fmt::Display for Classification<'a> {
+impl<'a> Default for Decision<'a> {
+    fn default() -> Self {
+        Decision::Valid(ValidReason::Default)
+    }
+}
+
+impl<'a> fmt::Display for Decision<'a> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            Classification::Valid(r) => write!(f, "valid {r}"),
-            Classification::Spam(r) => write!(f, "spam {r}"),
+            Decision::Valid(r) => write!(f, "valid {r}"),
+            Decision::Spam(r) => write!(f, "spam {r}"),
         }
     }
 }

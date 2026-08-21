@@ -2,7 +2,7 @@ use hyper::server::conn::http1;
 use hyper::service::Service;
 use hyper::{Request, Response, StatusCode, body::Incoming as IncomingBody};
 use hyper_util::rt::TokioIo;
-use poison_swamp_level::{Classification, Classifier, Config, Garbage, ServerMode};
+use poison_swamp_level::{Classification, Classifier, Config, Decision, Garbage, ServerMode};
 use std::net::IpAddr;
 use std::pin::Pin;
 use std::sync::Arc;
@@ -41,13 +41,13 @@ impl Service<Request<IncomingBody>> for App {
 
     fn call(&self, mut req: Request<IncomingBody>) -> Self::Future {
         req.extensions_mut().insert(self.client_ip);
-        let (decision, resp) = (self.handler)(self, &req);
+        let (classification, resp) = (self.handler)(self, &req);
         if self.logging {
             log::info!(
                 "Response {} {:?} decision {}",
                 resp.status().as_str(),
                 request_path(&req),
-                decision,
+                classification.decision,
             );
         }
         Box::pin(async { Ok(resp) })
@@ -103,41 +103,45 @@ async fn main() {
     }
 }
 
+fn empty_response(status_code: StatusCode) -> BodyType {
+    Response::builder()
+        .status(status_code)
+        .body("".into())
+        .unwrap()
+}
+
 fn server_proxy<'r>(app: &App, req: &'r Request<IncomingBody>) -> HandlerOutput<'r> {
-    match app.classifier.classify(&req) {
-        decision @ Classification::Valid(_) => {
-            let resp = Response::builder()
-                .status(app.status_code_valid)
-                .body("".into())
-                .unwrap();
-            (decision, resp)
+    let classification = app.classifier.classify(&req);
+    match classification.decision {
+        Decision::Valid(_) => {
+            let resp = empty_response(app.status_code_valid);
+            (classification, resp)
         }
-        decision @ Classification::Spam(_) => (decision, app.garbage_response(&req)),
+        Decision::Spam(_) => (classification, app.garbage_response(&req)),
     }
 }
 
 fn server_preflight<'r>(app: &App, req: &'r Request<IncomingBody>) -> HandlerOutput<'r> {
-    if let Some(d @ Classification::Spam(_)) = app.classifier.trusted_decision(&req) {
-        let resp = app.garbage_response(&req);
-        return (d, resp);
+    if let Some(classification) = app.classifier.trusted_decision(&req) {
+        if let Decision::Spam(_) = classification.decision {
+            let resp = app.garbage_response(&req);
+            return (classification, resp);
+        }
     }
 
-    let (decision, preflight_status) = match app.classifier.classify(&req) {
-        d @ Classification::Valid(_) => (d, app.status_code_valid),
-        d @ Classification::Spam(_) => (d, app.status_code_spam),
+    let classification = app.classifier.classify(&req);
+    let preflight_status = match classification.decision {
+        Decision::Valid(_) => app.status_code_valid,
+        Decision::Spam(_) => app.status_code_spam,
     };
 
-    let resp = Response::builder()
-        .status(preflight_status)
-        .body("".into())
-        .unwrap();
-
-    (decision, resp)
+    let resp = empty_response(preflight_status);
+    (classification, resp)
 }
 
 fn request_path<B>(req: &Request<B>) -> &str {
     req.uri()
         .path_and_query()
         .map(|pq| pq.as_str())
-        .unwrap_or(req.uri().path())
+        .unwrap_or("/")
 }
