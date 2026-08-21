@@ -117,7 +117,7 @@ fn server_proxy<'r>(app: &App, req: &'r Request<IncomingBody>) -> HandlerOutput<
 }
 
 fn server_preflight<'r>(app: &App, req: &'r Request<IncomingBody>) -> HandlerOutput<'r> {
-    if let Some(d @ Classification::Valid(_)) = app.classifier.trusted_decision(&req) {
+    if let Some(d @ Classification::Spam(_)) = app.classifier.trusted_decision(&req) {
         let resp = app.garbage_response(&req);
         return (d, resp);
     }
