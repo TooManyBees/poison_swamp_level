@@ -121,9 +121,14 @@ impl Garbage {
         } else {
             Value::None
         };
+        let title = path
+            .trim_end_matches('/')
+            .rsplit('/')
+            .next()
+            .map(|p| p.replace(self.link_separator, " "));
 
         let data = Value::Map(BTreeMap::from([
-            ("title".into(), Value::String("garbage".to_string())),
+            ("title".into(), title.into()),
             ("paragraphs".into(), Value::List(paragraphs)),
             ("links".into(), links),
         ]));
