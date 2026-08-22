@@ -4,6 +4,7 @@ use poison_swamp_level::handler::{App, HandlerType, preflight, proxy};
 use poison_swamp_level::{Classifier, Config, Garbage, ServerMode};
 use std::{
     error::Error,
+    io::{self, IsTerminal},
     net::{IpAddr, SocketAddr},
     sync::Arc,
 };
@@ -19,7 +20,11 @@ async fn main() {
     let config = match Config::read_from_file("./config.kdl") {
         Ok(config) => config,
         Err(e) => {
-            eprintln!("{}", e.explain());
+            if io::stderr().is_terminal() {
+                eprintln!("{}", e.explain());
+            } else {
+                eprintln!("{e}");
+            }
             std::process::exit(1);
         }
     };
@@ -110,14 +115,14 @@ impl AppConfig {
         self.config == *other
     }
 
-    async fn listen(&self) -> std::io::Result<TcpListener> {
+    async fn listen(&self) -> io::Result<TcpListener> {
         let listener = TcpListener::bind(self.listen_addr()).await?;
         log::info!("Listening on {}", self.listen_addr());
         Ok(listener)
     }
 }
 
-fn handle_connection(app_config: &AppConfig, result: std::io::Result<(TcpStream, SocketAddr)>) {
+fn handle_connection(app_config: &AppConfig, result: io::Result<(TcpStream, SocketAddr)>) {
     match result {
         Ok((stream, addr)) => {
             let io = TokioIo::new(stream);
