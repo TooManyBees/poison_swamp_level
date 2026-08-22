@@ -197,3 +197,36 @@ fn capitalized(word: &str) -> Cow<'_, str> {
         Cow::Owned(new_word)
     }
 }
+
+#[cfg(test)]
+mod test {
+    use super::Corpus;
+    use rand_seeder::{Seeder, SipRng};
+
+    #[test]
+    fn generates_consistent_words() {
+        let corpus = Corpus::from_files(&["susan.sontag.on.style.txt"]).unwrap();
+        let mut rng: SipRng = Seeder::from("/some/predictable/path").into_rng();
+        let generator = corpus.generator(&mut rng);
+
+        let expected = [
+            "new ( and any particular morality has its nourishment",
+            ", art and the ethical be made . but the prevalence of",
+            "genteel-moralistic judgments in contemporary literary (",
+            "and sometimes commendable ) attitudes . we may become",
+            "convinced of the world . i simply say that the notion of",
+            "style is a useful notion because will is not so easy ,",
+            "after all , seeking to defend the autonomy of art creates",
+            "a world which is [the artist's] alone .” we can , in theory",
+            ", the lure which engages consciousness in essentially formal",
+            "processes of transformation . this act of",
+        ]
+        .into_iter()
+        .flat_map(|line| line.split(' '))
+        .collect::<Vec<_>>();
+
+        let actual: Vec<&str> = generator.take(100).collect();
+
+        assert_eq!(actual, expected);
+    }
+}
