@@ -86,6 +86,10 @@ impl AppConfig {
         self.config.server.listen
     }
 
+    fn same_as(&self, other: &Self) -> bool {
+        self.config == other.config
+    }
+
     async fn listen(&self) -> std::io::Result<TcpListener> {
         let listener = TcpListener::bind(self.listen_addr()).await?;
         log::info!("Listening on {}", self.listen_addr());

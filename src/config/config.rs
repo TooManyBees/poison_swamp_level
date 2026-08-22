@@ -4,7 +4,7 @@ use log::LevelFilter;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr, SocketAddrV4};
 use std::{ops::RangeInclusive, path::Path};
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, PartialEq, Eq)]
 pub struct Config {
     pub classifier: Classifier,
     pub garbage: Garbage,
@@ -18,7 +18,7 @@ impl Config {
     }
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, PartialEq, Eq)]
 pub struct Classifier {
     pub unwanted_asns: Vec<u32>,
     pub asns_db_path: Option<String>,
@@ -30,7 +30,7 @@ pub struct Classifier {
     pub trusted_decision_header: Option<String>,
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, PartialEq, Eq)]
 pub struct Garbage {
     pub source_files: Vec<String>,
     pub words_file: Option<String>,
@@ -40,7 +40,7 @@ pub struct Garbage {
     pub poisons: Vec<String>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct Paragraphs {
     pub(super) min_words: usize,
     pub(super) max_words: usize,
@@ -69,7 +69,7 @@ impl Default for Paragraphs {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct Links {
     pub(super) min_words: usize,
     pub(super) max_words: usize,
@@ -100,7 +100,7 @@ impl Default for Links {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct Server {
     pub listen: SocketAddr,
     pub mode: ServerMode,
@@ -119,13 +119,13 @@ impl Default for Server {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub enum ServerMode {
     Proxy,
     Preflight,
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct Logging {
     pub level: LevelFilter,
     pub request_handler: bool,
