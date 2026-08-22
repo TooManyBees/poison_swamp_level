@@ -179,3 +179,25 @@ impl From<ParseError> for GarbageError {
         }
     }
 }
+
+impl fmt::Display for GarbageError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            GarbageError::Io(e) => e.fmt(f),
+            GarbageError::CorpusEmpty => f.write_str("training corpus is empty"),
+            GarbageError::WordsFileMissing => {
+                f.write_str("path to word list file was not specified")
+            }
+            GarbageError::WordsListTooShort(_, needed) => write!(
+                f,
+                "words file has fewer than {needed} words required by config garbage.links.words.min"
+            ),
+            GarbageError::TemplateFileMissing => {
+                f.write_str("path to template file was not specified")
+            }
+            GarbageError::Template(e) => e.fmt(f),
+        }
+    }
+}
+
+impl std::error::Error for GarbageError {}

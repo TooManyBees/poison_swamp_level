@@ -76,8 +76,8 @@ struct AppConfig {
 
 impl AppConfig {
     fn from_config(config: Config) -> Result<Self, Box<dyn Error>> {
-        let classifier = Classifier::new(&config).unwrap(); // FIXME
-        let garbage = Garbage::new(&config).unwrap(); // FIXME
+        let classifier = Classifier::new(&config)?;
+        let garbage = Garbage::new(&config)?;
 
         let handler = match config.server.mode {
             ServerMode::Proxy => proxy,

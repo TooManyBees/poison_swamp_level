@@ -320,3 +320,17 @@ impl From<BuildError> for ClassifierError {
         ClassifierError::Matcher(e)
     }
 }
+
+impl fmt::Display for ClassifierError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            ClassifierError::Io(e) => e.fmt(f),
+            ClassifierError::InvalidHeader(s) => write!(f, "invalid header: {s}"),
+            ClassifierError::MaxMindDb(e) => e.fmt(f),
+            ClassifierError::Json(e) => e.fmt(f),
+            ClassifierError::Matcher(e) => e.fmt(f),
+        }
+    }
+}
+
+impl std::error::Error for ClassifierError {}
