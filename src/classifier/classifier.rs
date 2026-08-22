@@ -4,7 +4,7 @@ use crate::config::Config;
 use aho_corasick::BuildError;
 use http::{
     Request,
-    header::{HeaderName, USER_AGENT},
+    header::{HOST, HeaderName, USER_AGENT},
 };
 use maxminddb::{MaxMindDbError, Reader, geoip2::Asn};
 use std::fmt;
@@ -168,7 +168,8 @@ impl Classifier {
 
     pub fn classify<'r, B>(&self, req: &'r Request<B>) -> Classification<'r> {
         let mut info = Classification {
-            ip: req.extensions().get::<IpAddr>().copied(),
+            host: req.headers().get(HOST).and_then(|h| h.to_str().ok()),
+            remote_ip: req.extensions().get::<IpAddr>().copied(),
             poison: self.poisoned_path(req),
             asn: self.asn(req),
             agent: req.headers().get(USER_AGENT).and_then(|h| h.to_str().ok()),
@@ -180,7 +181,7 @@ impl Classifier {
             return info;
         }
 
-        if let Some(ip) = info.ip.filter(|ip| self.trusted_ips.contains(&ip)) {
+        if let Some(ip) = info.remote_ip.filter(|ip| self.trusted_ips.contains(&ip)) {
             info.decision = Decision::Valid(ValidReason::TrustedIP(ip));
             return info;
         }
@@ -220,7 +221,8 @@ fn match_agent<'r>(matcher: Option<&Matcher>, header_value: Option<&'r str>) -> 
 
 #[derive(Debug, Default)]
 pub struct Classification<'a> {
-    pub ip: Option<IpAddr>,
+    pub host: Option<&'a str>,
+    pub remote_ip: Option<IpAddr>,
     pub agent: Option<&'a str>,
     pub asn: Option<u32>,
     pub poison: Option<&'a str>,
