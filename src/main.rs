@@ -7,7 +7,12 @@ use std::{
     net::{IpAddr, SocketAddr},
     sync::Arc,
 };
-use tokio::net::TcpListener;
+use tokio::net::{TcpListener, TcpStream};
+#[cfg(unix)]
+use tokio::{
+    signal::unix::{SignalKind, signal},
+    sync::{mpsc, mpsc::Sender},
+};
 
 #[tokio::main(flavor = "local")]
 async fn main() {
@@ -23,25 +28,42 @@ async fn main() {
         .filter(None, config.logging.level)
         .init();
 
-    // TODO: signal handler for reloading config (except log level)
-    // on signal, background thread to load the config and create the
-    // generator/classifier
-    // tokio::select! to loop between listener, signal handler, config reload result
-    // if config.server.listen changes, break out of entire loop and restart it
+    let mut app_config = AppConfig::from_config(config).unwrap();
+    let mut listener = app_config.listen().await.unwrap();
 
-    let app_config = AppConfig::from_config(config).unwrap();
-
-    let listener = app_config.listen().await.unwrap();
+    #[cfg(unix)]
+    let mut sighup = signal(SignalKind::hangup()).unwrap();
+    #[cfg(unix)]
+    let (config_reload_tx, mut config_reload) = mpsc::channel::<AppConfig>(1);
 
     loop {
-        let (stream, addr) = listener.accept().await.unwrap();
-        let io = TokioIo::new(stream);
-        let app = app_config.to_service(addr.ip());
-        tokio::task::spawn(async move {
-            if let Err(e) = http1::Builder::new().serve_connection(io, app).await {
-                println!("Failed to serve connection: {e}");
-            }
-        });
+        #[cfg(not(unix))]
+        if let Ok(stream_addr) = listener.accept().await {
+            handle_connection(&app_config, stream_addr);
+        }
+        #[cfg(unix)]
+        tokio::select! {
+            Ok(stream_addr) = listener.accept() => {
+                handle_connection(&app_config, stream_addr);
+            },
+            Some(new_app_config) = config_reload.recv() => {
+                if app_config.listen_addr() != new_app_config.listen_addr() {
+                    match new_app_config.listen().await {
+                        Ok(new_listener) => listener = new_listener,
+                        Err(e) => {
+                            log::error!("Config reload encountered error: {e}");
+                            continue;
+                        }
+                    }
+                }
+                app_config = new_app_config;
+
+                log::info!("Reloaded config");
+            },
+            _ = sighup.recv() => {
+                reload_config(&app_config, config_reload_tx.clone());
+            },
+        }
     }
 }
 
@@ -86,8 +108,8 @@ impl AppConfig {
         self.config.server.listen
     }
 
-    fn same_as(&self, other: &Self) -> bool {
-        self.config == other.config
+    fn same_as(&self, other: &Config) -> bool {
+        self.config == *other
     }
 
     async fn listen(&self) -> std::io::Result<TcpListener> {
@@ -95,4 +117,37 @@ impl AppConfig {
         log::info!("Listening on {}", self.listen_addr());
         Ok(listener)
     }
+}
+
+fn handle_connection(app_config: &AppConfig, (stream, addr): (TcpStream, SocketAddr)) {
+    let io = TokioIo::new(stream);
+    let app = app_config.to_service(addr.ip());
+    tokio::task::spawn(async move {
+        if let Err(e) = http1::Builder::new().serve_connection(io, app).await {
+            println!("Failed to serve connection: {e}");
+        }
+    });
+}
+
+#[cfg(unix)]
+fn reload_config(existing: &AppConfig, tx: Sender<AppConfig>) {
+    let new_config = match Config::read_from_file("./config.kdl") {
+        Ok(config) => config,
+        Err(e) => {
+            log::error!("Config reload encountered error: {e}");
+            return;
+        }
+    };
+
+    if existing.same_as(&new_config) {
+        log::info!("Reloaded config: no changes");
+        return;
+    }
+
+    std::thread::spawn(move || match AppConfig::from_config(new_config) {
+        Ok(app_config) => tx.blocking_send(app_config),
+        Err(e) => Ok({
+            log::error!("Config reload encountered error: {e}");
+        }),
+    });
 }
