@@ -38,13 +38,11 @@ async fn main() {
 
     loop {
         #[cfg(not(unix))]
-        if let Ok(stream_addr) = listener.accept().await {
-            handle_connection(&app_config, stream_addr);
-        }
+        handle_connection(&app_config, listener.accept().await);
         #[cfg(unix)]
         tokio::select! {
-            Ok(stream_addr) = listener.accept() => {
-                handle_connection(&app_config, stream_addr);
+            listen_result = listener.accept() => {
+                handle_connection(&app_config, listen_result);
             },
             Some(new_app_config) = config_reload.recv() => {
                 if app_config.listen_addr() != new_app_config.listen_addr() {
@@ -119,14 +117,19 @@ impl AppConfig {
     }
 }
 
-fn handle_connection(app_config: &AppConfig, (stream, addr): (TcpStream, SocketAddr)) {
-    let io = TokioIo::new(stream);
-    let app = app_config.to_service(addr.ip());
-    tokio::task::spawn(async move {
-        if let Err(e) = http1::Builder::new().serve_connection(io, app).await {
-            println!("Failed to serve connection: {e}");
+fn handle_connection(app_config: &AppConfig, result: std::io::Result<(TcpStream, SocketAddr)>) {
+    match result {
+        Ok((stream, addr)) => {
+            let io = TokioIo::new(stream);
+            let app = app_config.to_service(addr.ip());
+            tokio::task::spawn(async move {
+                if let Err(e) = http1::Builder::new().serve_connection(io, app).await {
+                    println!("Failed to serve connection: {e}");
+                }
+            });
         }
-    });
+        Err(e) => log::error!("error handling connection: {e}"),
+    }
 }
 
 #[cfg(unix)]
