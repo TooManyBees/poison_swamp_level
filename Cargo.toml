@@ -21,4 +21,9 @@ tokio = { version = "1.53", features = ["rt", "net", "macros", "signal"] }
 upon = { version = "0.11", default-features = false, features = ["functions", "unicode"] }
 
 [dev-dependencies]
+criterion = "0.8.2"
 pretty_assertions = "1.4.1"
+
+[[bench]]
+name = "markov_generator"
+harness = false
