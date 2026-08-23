@@ -1,4 +1,6 @@
-use super::generator::{JOIN_AFTER, JOIN_BEFORE, State, Substring, is_ending};
+use super::generator::{
+    JOIN_AFTER, JOIN_BEFORE, Next, Node, SENTENCE_ENDINGS, State, Substring, is_ending,
+};
 use std::borrow::Cow;
 use std::collections::HashMap;
 use std::iter::Peekable;
@@ -6,7 +8,12 @@ use std::path::{Path, PathBuf};
 use std::str::CharIndices;
 use std::{fmt, fs::File, io, io::Read};
 
-type Parsed = (String, HashMap<State, Vec<Substring>>, Vec<State>);
+type Parsed = (
+    String,
+    HashMap<State, Vec<Substring>>,
+    Vec<State>,
+    Vec<Node>,
+);
 
 pub fn read_from_strings(texts: &[&str]) -> Result<Parsed, ParseError> {
     let mut parse_state = ParseState::default();
@@ -67,14 +74,54 @@ impl<'a> ParseState<'a> {
             return Err(ParseError::NoContent);
         }
         self.compressed.shrink_to_fit();
+
         let mut states: Vec<_> = self
             .map
             .keys()
-            .filter(|(s1, _s2)| !s1.of(&self.compressed).starts_with(JOIN_BEFORE))
+            // .filter(|(s1, _s2)| !s1.of(&self.compressed).starts_with(JOIN_BEFORE))
             .copied()
             .collect();
         states.sort();
-        Ok((self.compressed, self.map, states))
+        assert_eq!(states[0], (Substring(0, 0), Substring(0, 0)));
+
+        let indices: HashMap<_, _> = states.iter().copied().zip(0..).collect();
+
+        let mut nodes = states
+            .iter()
+            .map(|state| {
+                let choices = self
+                    .map
+                    .get(&state)
+                    .expect("every element of map.keys() should be in map")
+                    .iter()
+                    .map(|&word| Next {
+                        word,
+                        next: indices.get(&(state.1, word)).copied(),
+                    })
+                    .collect::<Vec<_>>();
+                assert!(!choices.is_empty());
+                Node { choices }
+            })
+            .collect::<Vec<_>>();
+
+        // Zeroth node is every word that starts a new sentence
+        for (state, nexts) in self.map.iter().filter(|((_prev1, prev2), _nexts)| {
+            SENTENCE_ENDINGS.contains(&prev2.of(&self.compressed))
+        }) {
+            nodes[0].choices.extend(nexts.iter().map(|&word| {
+                Next {
+                    word,
+                    next: Some(
+                        indices
+                            .get(state)
+                            .copied()
+                            .expect("every key in map is a key in indices"),
+                    ),
+                }
+            }))
+        }
+
+        Ok((self.compressed, self.map, states, nodes))
     }
 }
 
@@ -274,7 +321,7 @@ impl fmt::Display for ParseError {
 
 #[cfg(test)]
 mod test {
-    use super::{Capitalized, Substring, Substrings, read_from_strings};
+    use super::{Capitalized, Next, Node, Substring, Substrings, read_from_strings};
     use pretty_assertions::assert_eq;
     use std::collections::HashMap;
 
@@ -433,7 +480,7 @@ mod test {
     #[test]
     fn read() {
         let texts = &["this is a string", "this is so cool", "cool beans babe"];
-        let (text, map, states) = read_from_strings(texts).unwrap();
+        let (text, map, states, nodes) = read_from_strings(texts).unwrap();
         assert_eq!(text, "thisisastringsocoolbeansbabe");
         const _START_: Substring = Substring(0, 0);
         const THIS: Substring = Substring(0, 4);
@@ -466,6 +513,83 @@ mod test {
                 (IS, A),
                 (IS, SO),
                 (COOL, BEANS),
+            ]
+        );
+
+        assert_eq!(
+            nodes,
+            vec![
+                // (0) <start>
+                Node {
+                    choices: vec![
+                        Next {
+                            word: THIS,
+                            next: Some(1) // -> is
+                        },
+                        Next {
+                            word: THIS,
+                            next: Some(1) // -> is
+                        },
+                        Next {
+                            word: COOL,
+                            next: Some(2) // -> beans
+                        }
+                    ]
+                },
+                // (1) <start> this ->
+                Node {
+                    choices: vec![
+                        Next {
+                            word: IS,
+                            next: Some(3) // -> a
+                        },
+                        Next {
+                            word: IS,
+                            next: Some(3) // -> so
+                        }
+                    ]
+                },
+                // (2) <start> cool ->
+                Node {
+                    choices: vec![Next {
+                        word: BEANS,
+                        next: Some(6) // babe
+                    }]
+                },
+                // (3) this is ->
+                Node {
+                    choices: vec![
+                        Next {
+                            word: A,
+                            next: Some(4)
+                        },
+                        Next {
+                            word: SO,
+                            next: Some(5)
+                        }
+                    ]
+                },
+                // (4) is a ->
+                Node {
+                    choices: vec![Next {
+                        word: STRING,
+                        next: None
+                    }]
+                },
+                // (5) is so ->
+                Node {
+                    choices: vec![Next {
+                        word: COOL,
+                        next: None,
+                    }]
+                },
+                // (6) cool beans ->
+                Node {
+                    choices: vec![Next {
+                        word: BABE,
+                        next: None,
+                    }]
+                },
             ]
         );
     }

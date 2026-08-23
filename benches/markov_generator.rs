@@ -21,6 +21,17 @@ fn criterion_benchmark(c: &mut Criterion) {
             }
         })
     });
+
+    c.bench_function("list-based generator", |b| {
+        let mut rng: SipRng = Seeder::from("/some/predictable/path").into_rng();
+        b.iter(|| {
+            let generator = corpus.generator2(black_box(&mut rng));
+            let words = generator.take(500);
+            for word in words {
+                black_box(word);
+            }
+        })
+    });
 }
 
 criterion_group!(benches, criterion_benchmark);
