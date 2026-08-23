@@ -8,6 +8,19 @@ pub struct Corpus {
     text: String,
     map: HashMap<State, Vec<Substring>>,
     states: Vec<State>,
+
+    nodes: Vec<Node>,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub struct Node {
+    pub choices: Vec<Next>,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub struct Next {
+    pub word: Substring,
+    pub next: Option<usize>,
 }
 
 pub struct SizeData {
@@ -15,27 +28,38 @@ pub struct SizeData {
     text_words: usize,
     map_keys: usize,
     map_bytes: usize,
+    nodes_bytes: usize,
 }
 
 impl fmt::Display for SizeData {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(
             f,
-            "{} words in {} bytes, {} states, {} bytes",
-            self.text_words, self.text_bytes, self.map_keys, self.map_bytes
+            "{} words in {} bytes, map of {} states in {} bytes, nodes of {} bytes",
+            self.text_words, self.text_bytes, self.map_keys, self.map_bytes, self.nodes_bytes
         )
     }
 }
 
 impl Corpus {
     pub fn from_strings(texts: &[&str]) -> Result<Corpus, ParseError> {
-        let (text, map, states) = read_from_strings(texts)?;
-        Ok(Corpus { text, map, states })
+        let (text, map, states, nodes) = read_from_strings(texts)?;
+        Ok(Corpus {
+            text,
+            map,
+            states,
+            nodes,
+        })
     }
 
     pub fn from_files<P: AsRef<Path>>(paths: &[P]) -> Result<Corpus, ParseError> {
-        let (text, map, states) = read_from_files(paths)?;
-        Ok(Corpus { text, map, states })
+        let (text, map, states, nodes) = read_from_files(paths)?;
+        Ok(Corpus {
+            text,
+            map,
+            states,
+            nodes,
+        })
     }
 
     pub fn generator<R: Rng>(&self, mut rng: R) -> Generator<'_, R> {
@@ -46,6 +70,15 @@ impl Corpus {
             states: &self.states,
             rng,
             state,
+        }
+    }
+
+    pub fn generator2<R: Rng>(&self, rng: R) -> Generator2<'_, R> {
+        Generator2 {
+            text: &self.text,
+            nodes: &self.nodes,
+            pos: 0,
+            rng,
         }
     }
 
@@ -63,11 +96,20 @@ impl Corpus {
 
         let state_bytes = size_of::<Vec<State>>() + self.states.len() * size_of::<State>();
 
+        let nodes_bytes = size_of::<Vec<Node>>()
+            + size_of::<Node>() * self.nodes.len()
+            + self
+                .nodes
+                .iter()
+                .map(|n| size_of::<Next>() * n.choices.len())
+                .sum::<usize>();
+
         SizeData {
             text_bytes: self.text.len(),
             text_words: 0,
             map_keys: self.map.len(),
             map_bytes: map_bytes + state_bytes,
+            nodes_bytes,
         }
     }
 
@@ -95,6 +137,39 @@ pub struct Substring(pub(super) usize, pub(super) usize);
 impl Substring {
     pub fn of(self, s: &str) -> &str {
         &s[self.0..self.1]
+    }
+}
+
+pub struct Generator2<'a, R: Rng> {
+    text: &'a str,
+    nodes: &'a [Node],
+    pos: usize,
+    rng: R,
+}
+
+impl<'a, R: Rng> Iterator for Generator2<'a, R> {
+    type Item = &'a str;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.nodes.is_empty() {
+            return None;
+        }
+
+        let node = self
+            .nodes
+            .get(self.pos)
+            .or_else(|| self.nodes.choose(&mut self.rng))?;
+
+        let word = node
+            .choices
+            .choose(&mut self.rng)
+            .expect("ParseState::finish asserts that each Node's choices is not empty");
+
+        self.pos = word
+            .next
+            .unwrap_or_else(|| self.rng.random_range(..self.nodes.len()));
+
+        return Some(word.word.of(self.text));
     }
 }
 
@@ -131,7 +206,7 @@ impl<'a, R: Rng> Iterator for Generator<'a, R> {
     }
 }
 
-static SENTENCE_ENDINGS: &'static [&'static str] = &[
+pub static SENTENCE_ENDINGS: &'static [&'static str] = &[
     ".", "!", "?", ".\"", "!\"", "?\"", ".”", "!”", "?”", ".)", "?)", "!)",
 ];
 
