@@ -260,16 +260,15 @@ mod test {
         let generator = corpus.generator(&mut rng);
 
         let expected = [
-            "new ( and any particular morality has its nourishment",
-            ", art and the ethical be made . but the prevalence of",
-            "genteel-moralistic judgments in contemporary literary (",
-            "and sometimes commendable ) attitudes . we may become",
-            "convinced of the world . i simply say that the notion of",
-            "style is a useful notion because will is not so easy ,",
-            "after all , seeking to defend the autonomy of art creates",
-            "a world which is [the artist's] alone .” we can , in theory",
-            ", the lure which engages consciousness in essentially formal",
-            "processes of transformation . this act of",
+            "for anyone else is there , too , which seems to suggest",
+            "that art supplies something like an excitation , a memory",
+            ", the pretext , the conventions of distance , which are",
+            "functions of “ style ” consists of the work of art are",
+            "defended as good or bad ? and that our response to something",
+            "like an excitation , a phenomenon of commitment , judgment",
+            "in most appraisals of serious novels , plays , and Tiffany ,",
+            "in a work of art as a generic decision on the matter where",
+            "he does , the notion of the whole",
         ]
         .into_iter()
         .flat_map(|line| line.split(' '))
