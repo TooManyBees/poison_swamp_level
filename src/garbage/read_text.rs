@@ -1,6 +1,5 @@
 use super::generator::{JOIN_AFTER, JOIN_BEFORE, State, Substring, is_ending};
 use std::borrow::Cow;
-use std::cmp::Ordering;
 use std::collections::HashMap;
 use std::iter::Peekable;
 use std::path::Path;
@@ -79,10 +78,7 @@ impl<'a> ParseState<'a> {
             .filter(|(s1, _s2)| !s1.of(&self.compressed).starts_with(JOIN_BEFORE))
             .copied()
             .collect();
-        states.sort_by(|(a1, a2), (b1, b2)| match a1.0.cmp(&b1.0) {
-            Ordering::Equal => a2.0.cmp(&b2.0),
-            ord => ord,
-        });
+        states.sort();
         Ok((self.compressed, self.map, states))
     }
 }
@@ -109,6 +105,7 @@ impl<'a> Capitalized<'a> {
 }
 
 struct Substrings<'a> {
+    leading_nulls: u8,
     source: &'a str,
     start_of_sentence: bool,
     inner: Peekable<CharIndices<'a>>,
@@ -117,6 +114,7 @@ struct Substrings<'a> {
 impl<'a> Substrings<'a> {
     fn new(s: &'a str) -> Self {
         Substrings {
+            leading_nulls: 2,
             source: s,
             start_of_sentence: true,
             inner: s.char_indices().peekable(),
@@ -136,6 +134,14 @@ impl<'a> Iterator for Substrings<'a> {
     type Item = Capitalized<'a>;
 
     fn next(&mut self) -> Option<Self::Item> {
+        if self.leading_nulls > 0 {
+            if self.inner.peek().is_none() {
+                return None;
+            }
+            self.leading_nulls -= 1;
+            return Some(Capitalized::Normal(""));
+        }
+
         let mut is_punct = false;
 
         let a = loop {
@@ -289,7 +295,7 @@ mod test {
         let substrings = Substrings::new(text)
             .map(Capitalized::downcase)
             .collect::<Vec<_>>();
-        assert_eq!(substrings, vec!("this", "is", "some", "text"));
+        assert_eq!(substrings, vec!["", "", "this", "is", "some", "text"]);
     }
 
     #[test]
@@ -298,7 +304,10 @@ mod test {
         let substrings = Substrings::new(text)
             .map(Capitalized::downcase)
             .collect::<Vec<_>>();
-        assert_eq!(substrings, vec!["this", "is", ".", "truly", ".", "text"]);
+        assert_eq!(
+            substrings,
+            vec!["", "", "this", "is", ".", "truly", ".", "text"]
+        );
     }
 
     #[test]
@@ -307,7 +316,10 @@ mod test {
         let substrings = Substrings::new(text)
             .map(Capitalized::downcase)
             .collect::<Vec<_>>();
-        assert_eq!(substrings, vec!["this", "is", ",", "truly", ",", "text"]);
+        assert_eq!(
+            substrings,
+            vec!["", "", "this", "is", ",", "truly", ",", "text"]
+        );
     }
 
     #[test]
@@ -316,7 +328,10 @@ mod test {
         let substrings = Substrings::new(text)
             .map(Capitalized::downcase)
             .collect::<Vec<_>>();
-        assert_eq!(substrings, vec!["this", "is", ";", "truly", ";", "text"]);
+        assert_eq!(
+            substrings,
+            vec!["", "", "this", "is", ";", "truly", ";", "text"]
+        );
     }
 
     #[test]
@@ -325,7 +340,10 @@ mod test {
         let substrings = Substrings::new(text)
             .map(Capitalized::downcase)
             .collect::<Vec<_>>();
-        assert_eq!(substrings, vec!["this", "is", "(", "truly", ")", "text"]);
+        assert_eq!(
+            substrings,
+            vec!["", "", "this", "is", "(", "truly", ")", "text"]
+        );
     }
 
     #[test]
@@ -334,7 +352,7 @@ mod test {
         let substrings = Substrings::new(text)
             .map(Capitalized::downcase)
             .collect::<Vec<_>>();
-        assert_eq!(substrings, vec!["this", "is", "very-cool", "text"]);
+        assert_eq!(substrings, vec!["", "", "this", "is", "very-cool", "text"]);
     }
 
     #[test]
@@ -345,7 +363,7 @@ mod test {
             .collect::<Vec<_>>();
         assert_eq!(
             substrings,
-            vec!["this", "is", "cool", ".", "truly", "it", "is", "."]
+            vec!["", "", "this", "is", "cool", ".", "truly", "it", "is", "."]
         );
     }
 
@@ -358,6 +376,8 @@ mod test {
         assert_eq!(
             substrings,
             vec![
+                "",
+                "",
                 "Test-Runner",
                 ",",
                 "Steve",
@@ -382,6 +402,22 @@ mod test {
         assert_eq!(
             windows.next(),
             Some((
+                Capitalized::Normal(""),
+                Capitalized::Normal(""),
+                Capitalized::Normal("this")
+            ))
+        );
+        assert_eq!(
+            windows.next(),
+            Some((
+                Capitalized::Normal(""),
+                Capitalized::Normal("this"),
+                Capitalized::Normal("is")
+            ))
+        );
+        assert_eq!(
+            windows.next(),
+            Some((
                 Capitalized::Normal("this"),
                 Capitalized::Normal("is"),
                 Capitalized::Normal("some")
@@ -400,7 +436,7 @@ mod test {
 
     #[test]
     fn substrings_windows_returns_none() {
-        let text = "this is";
+        let text = "";
         let mut windows = Substrings::new(text).windows();
         assert_eq!(windows.next(), None);
     }
@@ -410,36 +446,38 @@ mod test {
         let texts = &["this is a string", "this is so cool", "cool beans babe"];
         let (text, map, states) = read_from_strings(texts).unwrap();
         assert_eq!(text, "thisisastringsocoolbeansbabe");
+        const _START_: Substring = Substring(0, 0);
+        const THIS: Substring = Substring(0, 4);
+        const IS: Substring = Substring(4, 6);
+        const A: Substring = Substring(6, 7);
+        const STRING: Substring = Substring(7, 13);
+        const SO: Substring = Substring(13, 15);
+        const COOL: Substring = Substring(15, 19);
+        const BEANS: Substring = Substring(19, 24);
+        const BABE: Substring = Substring(24, 28);
         assert_eq!(
             map,
             HashMap::from([
-                // this is => [a, so]
-                (
-                    (Substring(0, 4), Substring(4, 6)),
-                    vec![Substring(6, 7), Substring(13, 15)]
-                ),
-                // is a => [string]
-                ((Substring(4, 6), Substring(6, 7)), vec![Substring(7, 13)]),
-                // is so => [cool]
-                (
-                    (Substring(4, 6), Substring(13, 15)),
-                    vec![Substring(15, 19)]
-                ),
-                // cool beans => [babe]
-                (
-                    (Substring(15, 19), Substring(19, 24)),
-                    vec![Substring(24, 28)]
-                ),
+                ((_START_, _START_), vec![THIS, THIS, COOL]),
+                ((_START_, THIS), vec![IS, IS]),
+                ((THIS, IS), vec![A, SO]),
+                ((IS, A), vec![STRING]),
+                ((IS, SO), vec![COOL]),
+                ((_START_, COOL), vec![BEANS]),
+                ((COOL, BEANS), vec![BABE]),
             ])
         );
         assert_eq!(
             states,
             vec![
-                (Substring(0, 4), Substring(4, 6)),     // this is
-                (Substring(4, 6), Substring(6, 7)),     // is a
-                (Substring(4, 6), Substring(13, 15)),   // is so
-                (Substring(15, 19), Substring(19, 24)), // cool beans
+                (_START_, _START_),
+                (_START_, THIS),
+                (_START_, COOL),
+                (THIS, IS),
+                (IS, A),
+                (IS, SO),
+                (COOL, BEANS),
             ]
-        )
+        );
     }
 }

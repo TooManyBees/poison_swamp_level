@@ -45,7 +45,7 @@ impl Corpus {
 
 pub type State = (Substring, Substring);
 
-#[derive(Copy, Clone, Debug, Default, Eq, PartialEq, Hash)]
+#[derive(Copy, Clone, Debug, Default, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct Substring(pub(super) usize, pub(super) usize);
 
 impl Substring {
