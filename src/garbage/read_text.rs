@@ -107,13 +107,11 @@ impl<'a> ParseState<'a> {
                         });
                         Next { word, next }
                     })
-                    .collect::<Vec<_>>()
-                    .into_boxed_slice();
+                    .collect::<Box<[Next]>>();
                 assert!(!next.is_empty());
                 Node { next }
             })
-            .collect::<Vec<_>>()
-            .into_boxed_slice();
+            .collect::<Box<[Node]>>();
 
         // Zeroth node is every word that starts a new sentence
         for (state, nexts) in self.map.iter().filter(|((_prev1, prev2), _nexts)| {

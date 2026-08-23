@@ -171,15 +171,17 @@ impl<'a, R: Rng> Iterator for Generator2<'a, R> {
             .get(self.pos)
             .or_else(|| self.nodes.choose(&mut self.rng))?;
 
-        if let Some(word) = node.next.choose(&mut self.rng) {
-            self.pos = word
-                .next
-                .map(|n| n.get())
-                .unwrap_or_else(|| self.rng.random_range(..self.nodes.len()));
-            return Some(word.word.of(self.text));
-        }
+        let word = node
+            .next
+            .choose(&mut self.rng)
+            .expect("ParseState::finish asserts that each Node's next is not empty");
 
-        unreachable!()
+        self.pos = word
+            .next
+            .map(|n| n.get())
+            .unwrap_or_else(|| self.rng.random_range(..self.nodes.len()));
+
+        return Some(word.word.of(self.text));
     }
 }
 
