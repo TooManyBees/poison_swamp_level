@@ -4,6 +4,7 @@ use super::generator::{
 use std::borrow::Cow;
 use std::collections::HashMap;
 use std::iter::Peekable;
+use std::num::NonZeroUsize;
 use std::path::{Path, PathBuf};
 use std::str::CharIndices;
 use std::{fmt, fs::File, io, io::Read};
@@ -94,9 +95,11 @@ impl<'a> ParseState<'a> {
                     .get(&state)
                     .expect("every element of map.keys() should be in map")
                     .iter()
-                    .map(|&word| Next {
-                        word,
-                        next: indices.get(&(state.1, word)).copied(),
+                    .map(|&word| {
+                        let next = indices.get(&(state.1, word)).copied().map(|n| {
+                            NonZeroUsize::new(n).expect("nothing should link back to the 0 index")
+                        });
+                        Next { word, next }
                     })
                     .collect::<Box<[_]>>();
                 assert!(!choices.is_empty());
@@ -119,6 +122,10 @@ impl<'a> ParseState<'a> {
                             indices
                                 .get(state)
                                 .copied()
+                                .map(|n| {
+                                    NonZeroUsize::new(n)
+                                        .expect("nothing should link back to the 0 index")
+                                })
                                 .expect("every key in map is a key in indices"),
                         ),
                     }
@@ -335,6 +342,7 @@ mod test {
     use super::{Capitalized, Next, Node, Substring, Substrings, read_from_strings};
     use pretty_assertions::assert_eq;
     use std::collections::HashMap;
+    use std::num::NonZero;
 
     #[test]
     fn substrings_parses_words() {
@@ -535,15 +543,15 @@ mod test {
                     choices: vec![
                         Next {
                             word: THIS,
-                            next: Some(1) // -> is
+                            next: Some(NonZero::new(1).unwrap()) // -> is
                         },
                         Next {
                             word: THIS,
-                            next: Some(1) // -> is
+                            next: Some(NonZero::new(1).unwrap()) // -> is
                         },
                         Next {
                             word: COOL,
-                            next: Some(2) // -> beans
+                            next: Some(NonZero::new(2).unwrap()) // -> beans
                         }
                     ]
                     .into()
@@ -553,11 +561,11 @@ mod test {
                     choices: vec![
                         Next {
                             word: IS,
-                            next: Some(3) // -> a
+                            next: Some(NonZero::new(3).unwrap()) // -> a
                         },
                         Next {
                             word: IS,
-                            next: Some(3) // -> so
+                            next: Some(NonZero::new(3).unwrap()) // -> so
                         }
                     ]
                     .into()
@@ -566,7 +574,7 @@ mod test {
                 Node {
                     choices: vec![Next {
                         word: BEANS,
-                        next: Some(6) // babe
+                        next: Some(NonZero::new(6).unwrap()) // babe
                     }]
                     .into()
                 },
@@ -575,11 +583,11 @@ mod test {
                     choices: vec![
                         Next {
                             word: A,
-                            next: Some(4)
+                            next: Some(NonZero::new(4).unwrap())
                         },
                         Next {
                             word: SO,
-                            next: Some(5)
+                            next: Some(NonZero::new(5).unwrap())
                         }
                     ]
                     .into()
