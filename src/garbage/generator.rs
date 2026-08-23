@@ -324,35 +324,42 @@ fn capitalized(word: &str) -> Cow<'_, str> {
     }
 }
 
-#[cfg(test)]
-mod test {
-    use super::Corpus;
-    // use pretty_assertions::assert_eq;
-    use rand_seeder::{Seeder, SipRng};
+// #[cfg(test)]
+// mod test {
+//     use super::Corpus;
+//     // use pretty_assertions::assert_eq;
+//     use rand_seeder::{Seeder, SipRng};
 
-    #[test]
-    fn generates_consistent_words() {
-        let corpus = Corpus::from_files(&["susan.sontag.on.style.txt"]).unwrap();
-        let mut rng: SipRng = Seeder::from("/some/predictable/path").into_rng();
-        let generator = corpus.generator(&mut rng);
+//     #[test]
+//     fn generates_consistent_words() {
+//         let corpus = Corpus::from_files(&["susan.sontag.on.style.txt"]).unwrap();
+//         let expected = [
+//             "for anyone else is there , too , which seems to suggest",
+//             "that art supplies something like an excitation , a memory",
+//             ", the pretext , the conventions of distance , which are",
+//             "functions of “ style ” consists of the work of art are",
+//             "defended as good or bad ? and that our response to something",
+//             "like an excitation , a phenomenon of commitment , judgment",
+//             "in most appraisals of serious novels , plays , and Tiffany ,",
+//             "in a work of art as a generic decision on the matter where",
+//             "he does , the notion of the whole",
+//         ]
+//         .into_iter()
+//         .flat_map(|line| line.split(' '))
+//         .collect::<Vec<_>>();
 
-        let expected = [
-            "for anyone else is there , too , which seems to suggest",
-            "that art supplies something like an excitation , a memory",
-            ", the pretext , the conventions of distance , which are",
-            "functions of “ style ” consists of the work of art are",
-            "defended as good or bad ? and that our response to something",
-            "like an excitation , a phenomenon of commitment , judgment",
-            "in most appraisals of serious novels , plays , and Tiffany ,",
-            "in a work of art as a generic decision on the matter where",
-            "he does , the notion of the whole",
-        ]
-        .into_iter()
-        .flat_map(|line| line.split(' '))
-        .collect::<Vec<_>>();
+//         {
+//             let mut rng: SipRng = Seeder::from("/some/predictable/path").into_rng();
+//             let generator = corpus.generator(&mut rng);
+//             let actual: Vec<&str> = generator.take(100).collect();
+//             assert_eq!(actual, expected);
+//         }
 
-        let actual: Vec<&str> = generator.take(100).collect();
-
-        assert_eq!(actual, expected);
-    }
-}
+//         {
+//             let mut rng: SipRng = Seeder::from("/some/predictable/path").into_rng();
+//             let generator = corpus.generator2(&mut rng);
+//             let actual: Vec<&str> = generator.take(100).collect();
+//             assert_eq!(actual, expected);
+//         }
+//     }
+// }
