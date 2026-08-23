@@ -142,7 +142,11 @@ impl<'a> ParseState<'a> {
                 .into_boxed_slice();
         }
 
-        let map = self.map.into_iter().map(|(k, v)| (k, v.into_boxed_slice())).collect();
+        let map = self
+            .map
+            .into_iter()
+            .map(|(k, v)| (k, v.into_boxed_slice()))
+            .collect();
 
         Ok((self.compressed, map, states, nodes))
     }
@@ -564,7 +568,8 @@ mod test {
                             word: COOL,
                             next: Some(NonZero::new(2).unwrap()) // -> beans
                         }
-                    ].into()
+                    ]
+                    .into()
                 },
                 // (1) <start> this ->
                 Node {
@@ -577,14 +582,16 @@ mod test {
                             word: IS,
                             next: Some(NonZero::new(3).unwrap()) // -> so
                         }
-                    ].into()
+                    ]
+                    .into()
                 },
                 // (2) <start> cool ->
                 Node {
                     next: vec![Next {
                         word: BEANS,
                         next: Some(NonZero::new(6).unwrap()) // babe
-                    }].into()
+                    }]
+                    .into()
                 },
                 // (3) this is ->
                 Node {
@@ -597,28 +604,32 @@ mod test {
                             word: SO,
                             next: Some(NonZero::new(5).unwrap())
                         }
-                    ].into()
+                    ]
+                    .into()
                 },
                 // (4) is a ->
                 Node {
                     next: vec![Next {
                         word: STRING,
                         next: None
-                    }].into()
+                    }]
+                    .into()
                 },
                 // (5) is so ->
                 Node {
                     next: vec![Next {
                         word: COOL,
                         next: None,
-                    }].into()
+                    }]
+                    .into()
                 },
                 // (6) cool beans ->
                 Node {
                     next: vec![Next {
                         word: BABE,
                         next: None,
-                    }].into()
+                    }]
+                    .into()
                 },
             ]
         );
