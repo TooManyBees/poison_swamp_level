@@ -214,7 +214,7 @@ impl<'a, R: Rng> Iterator for Generator<'a, R> {
     }
 }
 
-static SENTENCE_ENDINGS: &'static [&'static str] = &[
+pub static SENTENCE_ENDINGS: &'static [&'static str] = &[
     ".", "!", "?", ".\"", "!\"", "?\"", ".”", "!”", "?”", ".)", "?)", "!)",
 ];
 

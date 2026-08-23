@@ -1,4 +1,6 @@
-use super::generator::{JOIN_AFTER, JOIN_BEFORE, Next, Node, State, Substring, is_ending};
+use super::generator::{
+    JOIN_AFTER, JOIN_BEFORE, Next, Node, SENTENCE_ENDINGS, State, Substring, is_ending,
+};
 use std::borrow::Cow;
 use std::collections::HashMap;
 use std::iter::Peekable;
@@ -109,7 +111,7 @@ impl<'a> ParseState<'a> {
 
         // Zeroth node is every word that starts a new sentence
         for (state, nexts) in self.map.iter().filter(|((_prev1, prev2), _nexts)| {
-            [".", "?", "!"].contains(&prev2.of(&self.compressed))
+            SENTENCE_ENDINGS.contains(&prev2.of(&self.compressed))
         }) {
             nodes[0].next.extend(nexts.iter().map(|&word| {
                 Next {
