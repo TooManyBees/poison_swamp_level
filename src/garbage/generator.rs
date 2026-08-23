@@ -1,6 +1,7 @@
 use super::read_text::{ParseError, read, read_from_files, read_from_strings};
 use rand::{Rng, RngExt, seq::IndexedRandom};
 use std::collections::HashMap;
+use std::num::NonZeroUsize;
 use std::ops::RangeInclusive;
 use std::{borrow::Cow, fmt, mem::size_of, path::Path};
 
@@ -20,7 +21,7 @@ pub struct Node {
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub struct Next {
     pub word: Substring,
-    pub next: Option<usize>,
+    pub next: Option<NonZeroUsize>,
 }
 
 pub struct SizeData {
@@ -173,6 +174,7 @@ impl<'a, R: Rng> Iterator for Generator2<'a, R> {
         if let Some(word) = node.next.choose(&mut self.rng) {
             self.pos = word
                 .next
+                .map(|n| n.get())
                 .unwrap_or_else(|| self.rng.random_range(..self.nodes.len()));
             return Some(word.word.of(self.text));
         }
