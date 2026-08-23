@@ -6,18 +6,18 @@ use std::{borrow::Cow, fmt, mem::size_of, path::Path};
 
 pub struct Corpus {
     text: String,
-    map: HashMap<State, Vec<Substring>>,
-    states: Vec<State>,
+    map: HashMap<State, Box<[Substring]>>,
+    states: Box<[State]>,
 
-    nodes: Vec<Node>,
+    nodes: Box<[Node]>,
 }
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct Node {
-    pub next: Vec<Next>,
+    pub next: Box<[Next]>,
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub struct Next {
     pub word: Substring,
     pub next: Option<usize>,
@@ -93,20 +93,20 @@ impl Corpus {
     }
 
     pub fn size(&self) -> SizeData {
-        let map_bytes = size_of::<HashMap<State, Vec<Substring>>>()
+        let map_bytes = size_of::<HashMap<State, Box<[Substring]>>>()
             + self
                 .map
                 .values()
                 .map(|vs| {
                     size_of::<State>()
-                        + size_of::<Vec<Substring>>()
+                        + size_of::<Box<[Substring]>>()
                         + vs.len() * size_of::<Substring>()
                 })
                 .sum::<usize>();
 
-        let state_bytes = size_of::<Vec<State>>() + self.states.len() * size_of::<State>();
+        let state_bytes = size_of::<Box<[State]>>() + self.states.len() * size_of::<State>();
 
-        let nodes_bytes = size_of::<Vec<Node>>()
+        let nodes_bytes = size_of::<Box<[Node]>>()
             + size_of::<Node>() * self.nodes.len()
             + self
                 .nodes
@@ -183,7 +183,7 @@ impl<'a, R: Rng> Iterator for Generator2<'a, R> {
 
 pub struct Generator<'a, R: Rng> {
     text: &'a str,
-    map: &'a HashMap<State, Vec<Substring>>,
+    map: &'a HashMap<State, Box<[Substring]>>,
     states: &'a [State],
     rng: R,
     state: State,

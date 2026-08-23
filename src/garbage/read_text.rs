@@ -10,9 +10,9 @@ use std::{fmt, fs::File, io, io::Read};
 
 type Parsed = (
     String,
-    HashMap<State, Vec<Substring>>,
-    Vec<State>,
-    Vec<Node>,
+    HashMap<State, Box<[Substring]>>,
+    Box<[State]>,
+    Box<[Node]>,
 );
 
 pub fn read(text: &str) -> Result<Parsed, ParseError> {
@@ -80,12 +80,13 @@ impl<'a> ParseState<'a> {
         }
         self.compressed.shrink_to_fit();
 
-        let mut states: Vec<_> = self
+        let mut states = self
             .map
             .keys()
             // .filter(|(s1, _s2)| !s1.of(&self.compressed).starts_with(JOIN_BEFORE))
             .copied()
-            .collect();
+            .collect::<Vec<_>>()
+            .into_boxed_slice();
         states.sort();
         assert_eq!(states[0], (Substring(0, 0), Substring(0, 0)));
 
@@ -103,30 +104,40 @@ impl<'a> ParseState<'a> {
                         word,
                         next: indices.get(&(state.1, word)).copied(),
                     })
-                    .collect::<Vec<_>>();
+                    .collect::<Vec<_>>()
+                    .into_boxed_slice();
                 assert!(!next.is_empty());
                 Node { next }
             })
-            .collect::<Vec<_>>();
+            .collect::<Vec<_>>()
+            .into_boxed_slice();
 
         // Zeroth node is every word that starts a new sentence
         for (state, nexts) in self.map.iter().filter(|((_prev1, prev2), _nexts)| {
             SENTENCE_ENDINGS.contains(&prev2.of(&self.compressed))
         }) {
-            nodes[0].next.extend(nexts.iter().map(|&word| {
-                Next {
-                    word,
-                    next: Some(
-                        indices
-                            .get(state)
-                            .copied()
-                            .expect("every key in map is a key in indices"),
-                    ),
-                }
-            }))
+            nodes[0].next = nodes[0]
+                .next
+                .iter()
+                .copied()
+                .chain(nexts.iter().map(|&word| {
+                    Next {
+                        word,
+                        next: Some(
+                            indices
+                                .get(state)
+                                .copied()
+                                .expect("every key in map is a key in indices"),
+                        ),
+                    }
+                }))
+                .collect::<Vec<_>>()
+                .into_boxed_slice();
         }
 
-        Ok((self.compressed, self.map, states, nodes))
+        let map = self.map.into_iter().map(|(k, v)| (k, v.into_boxed_slice())).collect();
+
+        Ok((self.compressed, map, states, nodes))
     }
 }
 
@@ -505,18 +516,18 @@ mod test {
         assert_eq!(
             map,
             HashMap::from([
-                ((_START_, _START_), vec![THIS, THIS, COOL]),
-                ((_START_, THIS), vec![IS, IS]),
-                ((THIS, IS), vec![A, SO]),
-                ((IS, A), vec![STRING]),
-                ((IS, SO), vec![COOL]),
-                ((_START_, COOL), vec![BEANS]),
-                ((COOL, BEANS), vec![BABE]),
+                ((_START_, _START_), vec![THIS, THIS, COOL].into()),
+                ((_START_, THIS), vec![IS, IS].into()),
+                ((THIS, IS), vec![A, SO].into()),
+                ((IS, A), vec![STRING].into()),
+                ((IS, SO), vec![COOL].into()),
+                ((_START_, COOL), vec![BEANS].into()),
+                ((COOL, BEANS), vec![BABE].into()),
             ])
         );
         assert_eq!(
-            states,
-            vec![
+            &*states,
+            &[
                 (_START_, _START_),
                 (_START_, THIS),
                 (_START_, COOL),
@@ -528,8 +539,8 @@ mod test {
         );
 
         assert_eq!(
-            nodes,
-            vec![
+            &*nodes,
+            &[
                 // (0) <start>
                 Node {
                     next: vec![
@@ -545,7 +556,7 @@ mod test {
                             word: COOL,
                             next: Some(2) // -> beans
                         }
-                    ]
+                    ].into()
                 },
                 // (1) <start> this ->
                 Node {
@@ -558,14 +569,14 @@ mod test {
                             word: IS,
                             next: Some(3) // -> so
                         }
-                    ]
+                    ].into()
                 },
                 // (2) <start> cool ->
                 Node {
                     next: vec![Next {
                         word: BEANS,
                         next: Some(6) // babe
-                    }]
+                    }].into()
                 },
                 // (3) this is ->
                 Node {
@@ -578,28 +589,28 @@ mod test {
                             word: SO,
                             next: Some(5)
                         }
-                    ]
+                    ].into()
                 },
                 // (4) is a ->
                 Node {
                     next: vec![Next {
                         word: STRING,
                         next: None
-                    }]
+                    }].into()
                 },
                 // (5) is so ->
                 Node {
                     next: vec![Next {
                         word: COOL,
                         next: None,
-                    }]
+                    }].into()
                 },
                 // (6) cool beans ->
                 Node {
                     next: vec![Next {
                         word: BABE,
                         next: None,
-                    }]
+                    }].into()
                 },
             ]
         );
