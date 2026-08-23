@@ -27,11 +27,10 @@ impl Garbage {
     pub fn new(config: &Config) -> Result<Self, GarbageError> {
         let now = Instant::now();
         let corpus = Corpus::from_files(&config.garbage.source_files)?;
-        let (byte_size, num_states) = corpus.size();
+        let size_data = corpus.size();
         log::debug!(
-            "Trained garbage generator ({} bytes, {} states) in {}ms",
-            byte_size,
-            num_states,
+            "Trained garbage generator ({}) in {}ms",
+            size_data,
             now.elapsed().as_millis()
         );
 

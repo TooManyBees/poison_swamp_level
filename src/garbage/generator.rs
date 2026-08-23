@@ -1,14 +1,30 @@
 use super::read_text::{ParseError, read, read_from_files, read_from_strings};
 use rand::{Rng, RngExt, seq::IndexedRandom};
-use std::borrow::Cow;
 use std::collections::HashMap;
 use std::ops::RangeInclusive;
-use std::path::Path;
+use std::{borrow::Cow, fmt, mem::size_of, path::Path};
 
 pub struct Corpus {
     text: String,
     map: HashMap<State, Vec<Substring>>,
     states: Vec<State>,
+}
+
+pub struct SizeData {
+    text_bytes: usize,
+    text_words: usize,
+    map_keys: usize,
+    map_bytes: usize,
+}
+
+impl fmt::Display for SizeData {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(
+            f,
+            "{} words in {} bytes, {} states, {} bytes",
+            self.text_words, self.text_bytes, self.map_keys, self.map_bytes
+        )
+    }
 }
 
 impl Corpus {
@@ -38,8 +54,41 @@ impl Corpus {
         }
     }
 
-    pub fn size(&self) -> (usize, usize) {
-        (self.text.len(), self.map.values().map(|vs| vs.len()).sum())
+    pub fn size(&self) -> SizeData {
+        let map_bytes = size_of::<HashMap<State, Vec<Substring>>>()
+            + self
+                .map
+                .values()
+                .map(|vs| {
+                    size_of::<State>()
+                        + size_of::<Vec<Substring>>()
+                        + vs.len() * size_of::<Substring>()
+                })
+                .sum::<usize>();
+
+        let state_bytes = size_of::<Vec<State>>() + self.states.len() * size_of::<State>();
+
+        SizeData {
+            text_bytes: self.text.len(),
+            text_words: 0,
+            map_keys: self.map.len(),
+            map_bytes: map_bytes + state_bytes,
+        }
+    }
+
+    pub fn dump(&self) {
+        use std::io::Write;
+        let mut all_substrings: Vec<_> = self
+            .map
+            .values()
+            .flat_map(|v| v.iter().map(|s| s.of(&self.text)))
+            .collect();
+        all_substrings.sort();
+        all_substrings.dedup();
+        let mut stdout = std::io::stdout().lock();
+        for substr in all_substrings {
+            let _ = write!(stdout, "{}\n", substr);
+        }
     }
 }
 
