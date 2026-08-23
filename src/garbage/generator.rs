@@ -8,6 +8,19 @@ pub struct Corpus {
     text: String,
     map: HashMap<State, Vec<Substring>>,
     states: Vec<State>,
+
+    nodes: Vec<Node>,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub struct Node {
+    pub next: Vec<Next>,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub struct Next {
+    pub word: Substring,
+    pub next: Option<usize>,
 }
 
 pub struct SizeData {
@@ -29,18 +42,33 @@ impl fmt::Display for SizeData {
 
 impl Corpus {
     pub fn from_string(text: &str) -> Result<Corpus, ParseError> {
-        let (text, map, states) = read(text)?;
-        Ok(Corpus { text, map, states })
+        let (text, map, states, nodes) = read(text)?;
+        Ok(Corpus {
+            text,
+            map,
+            states,
+            nodes,
+        })
     }
 
     pub fn from_strings(texts: &[&str]) -> Result<Corpus, ParseError> {
-        let (text, map, states) = read_from_strings(texts)?;
-        Ok(Corpus { text, map, states })
+        let (text, map, states, nodes) = read_from_strings(texts)?;
+        Ok(Corpus {
+            text,
+            map,
+            states,
+            nodes,
+        })
     }
 
     pub fn from_files<P: AsRef<Path>>(paths: &[P]) -> Result<Corpus, ParseError> {
-        let (text, map, states) = read_from_files(paths)?;
-        Ok(Corpus { text, map, states })
+        let (text, map, states, nodes) = read_from_files(paths)?;
+        Ok(Corpus {
+            text,
+            map,
+            states,
+            nodes,
+        })
     }
 
     pub fn generator<R: Rng>(&self, mut rng: R) -> Generator<'_, R> {
@@ -51,6 +79,15 @@ impl Corpus {
             states: &self.states,
             rng,
             state,
+        }
+    }
+
+    pub fn generator2<R: Rng>(&self, rng: R) -> Generator2<'_, R> {
+        Generator2 {
+            text: &self.text,
+            nodes: &self.nodes,
+            pos: 0,
+            rng,
         }
     }
 
@@ -100,6 +137,37 @@ pub struct Substring(pub(super) usize, pub(super) usize);
 impl Substring {
     pub fn of(self, s: &str) -> &str {
         &s[self.0..self.1]
+    }
+}
+
+pub struct Generator2<'a, R: Rng> {
+    text: &'a str,
+    nodes: &'a [Node],
+    pos: usize,
+    rng: R,
+}
+
+impl<'a, R: Rng> Iterator for Generator2<'a, R> {
+    type Item = &'a str;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.nodes.is_empty() {
+            return None;
+        }
+
+        let node = self
+            .nodes
+            .get(self.pos)
+            .or_else(|| self.nodes.choose(&mut self.rng))?;
+
+        if let Some(word) = node.next.choose(&mut self.rng) {
+            self.pos = word
+                .next
+                .unwrap_or_else(|| self.rng.random_range(..self.nodes.len()));
+            return Some(word.word.of(self.text));
+        }
+
+        unreachable!()
     }
 }
 
