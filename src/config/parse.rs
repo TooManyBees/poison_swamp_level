@@ -599,6 +599,7 @@ impl fmt::Display for ParseError {
 mod test {
     use super::{ParseError, Parseable, back_n_newlines, forward_n_newlines};
     use kdl::KdlDocument;
+    use pretty_assertions::assert_eq;
     use std::assert_matches;
 
     #[test]

@@ -201,6 +201,7 @@ fn capitalized(word: &str) -> Cow<'_, str> {
 #[cfg(test)]
 mod test {
     use super::Corpus;
+    // use pretty_assertions::assert_eq;
     use rand_seeder::{Seeder, SipRng};
 
     #[test]

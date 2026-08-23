@@ -280,6 +280,7 @@ impl fmt::Display for ParseError {
 #[cfg(test)]
 mod test {
     use super::{Capitalized, Substring, Substrings, read_from_strings};
+    use pretty_assertions::assert_eq;
     use std::collections::HashMap;
 
     #[test]

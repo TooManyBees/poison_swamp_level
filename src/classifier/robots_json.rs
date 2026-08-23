@@ -62,6 +62,7 @@ impl<'de> Deserialize<'de> for UserAgents {
 #[cfg(test)]
 mod test {
     use super::UserAgents;
+    use pretty_assertions::assert_eq;
 
     #[test]
     fn serde_deserializes_object_keys() {
