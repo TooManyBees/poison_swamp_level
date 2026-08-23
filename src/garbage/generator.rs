@@ -28,14 +28,15 @@ pub struct SizeData {
     text_words: usize,
     map_keys: usize,
     map_bytes: usize,
+    nodes_bytes: usize,
 }
 
 impl fmt::Display for SizeData {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(
             f,
-            "{} words in {} bytes, {} states, {} bytes",
-            self.text_words, self.text_bytes, self.map_keys, self.map_bytes
+            "{} words in {} bytes, map of {} states in {} bytes, nodes of {} bytes",
+            self.text_words, self.text_bytes, self.map_keys, self.map_bytes, self.nodes_bytes
         )
     }
 }
@@ -105,11 +106,20 @@ impl Corpus {
 
         let state_bytes = size_of::<Vec<State>>() + self.states.len() * size_of::<State>();
 
+        let nodes_bytes = size_of::<Vec<Node>>()
+            + size_of::<Node>() * self.nodes.len()
+            + self
+                .nodes
+                .iter()
+                .map(|n| size_of::<Next>() * n.next.len())
+                .sum::<usize>();
+
         SizeData {
             text_bytes: self.text.len(),
             text_words: 0,
             map_keys: self.map.len(),
             map_bytes: map_bytes + state_bytes,
+            nodes_bytes,
         }
     }
 
