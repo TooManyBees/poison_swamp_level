@@ -182,12 +182,6 @@ impl<'a, R: Rng> Generator<'a, R> {
         (0..num_paragraphs).map(|_| self.generate(num_words.clone()))
     }
 
-    pub fn words(&mut self, range: RangeInclusive<usize>) -> impl Iterator<Item = &'a str> {
-        let num_words = self.rng.random_range(range);
-        self.filter(|w| w.chars().any(|c| !c.is_ascii_punctuation()))
-            .take(num_words)
-    }
-
     pub fn generate(&mut self, range: RangeInclusive<usize>) -> String {
         let mut output = String::new();
 
