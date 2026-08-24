@@ -76,6 +76,7 @@ pub struct Links {
     pub(super) min_count: usize,
     pub(super) max_count: usize,
     pub separator: char,
+    pub trailing_slash: bool,
 }
 
 impl Links {
@@ -96,6 +97,7 @@ impl Default for Links {
             min_count: 2,
             max_count: 5,
             separator: '-',
+            trailing_slash: false,
         }
     }
 }

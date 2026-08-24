@@ -20,6 +20,7 @@ pub struct Garbage {
     num_links: RangeInclusive<usize>,
     num_link_words: RangeInclusive<usize>,
     link_separator: char,
+    link_trailing_slash: bool,
     poisons: Vec<String>,
 }
 
@@ -74,6 +75,7 @@ impl Garbage {
             num_links: config.garbage.links.count(),
             num_link_words: config.garbage.links.num_words(),
             link_separator: config.garbage.links.separator,
+            link_trailing_slash: config.garbage.links.trailing_slash,
             poisons: config.garbage.poisons.clone(),
         })
     }
@@ -95,6 +97,9 @@ impl Garbage {
             for segment in &words {
                 link_path.push(self.link_separator);
                 link_path.push_str(segment);
+            }
+            if self.link_trailing_slash {
+                link_path.push('/');
             }
             let text = words.join(" ");
             links.push(Value::Map(BTreeMap::from([

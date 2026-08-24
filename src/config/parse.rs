@@ -1,4 +1,4 @@
-use super::config::{Classifier, Config, Garbage, LogTarget, Logging, Server, ServerMode};
+use super::config::{Classifier, Config, Garbage, Links, LogTarget, Logging, Server, ServerMode};
 use http::status::StatusCode;
 use kdl::{KdlDocument, KdlEntry, KdlError, KdlNode};
 use log::LevelFilter;
@@ -47,6 +47,8 @@ trait Parseable {
     fn parse_classifier(&self) -> Result<Classifier, ParseError>;
 
     fn parse_garbage(&self) -> Result<Garbage, ParseError>;
+
+    fn parse_garbage_links(&self) -> Result<Links, ParseError>;
 
     fn parse_logging(&self) -> Result<Logging, ParseError>;
 
@@ -205,35 +207,43 @@ impl Parseable for KdlNode {
                     }
                 }
                 "links" => {
-                    if let Some(n) = child.int_prop::<usize>("min")? {
-                        garbage.links.min_count = n;
-                    }
-                    if let Some(n) = child.int_prop::<usize>("max")? {
-                        garbage.links.max_count = n;
-                    }
-                    for child in child.iter_children() {
-                        match child.name().value() {
-                            "words" => {
-                                if let Some(n) = child.int_prop::<usize>("min")? {
-                                    garbage.links.min_words = n;
-                                }
-                                if let Some(n) = child.int_prop::<usize>("max")? {
-                                    garbage.links.max_words = n;
-                                }
-                            }
-                            "separator" => {
-                                garbage.links.separator =
-                                    child.one_string_arg()?.chars().nth(0).unwrap();
-                            }
-                            _ => {}
-                        }
-                    }
+                    garbage.links = child.parse_garbage_links()?;
                 }
                 _ => {}
             }
         }
 
         Ok(garbage)
+    }
+
+    fn parse_garbage_links(&self) -> Result<Links, ParseError> {
+        let mut links = Links::default();
+
+        if let Some(n) = self.int_prop::<usize>("min")? {
+            links.min_count = n;
+        }
+        if let Some(n) = self.int_prop::<usize>("max")? {
+            links.max_count = n;
+        }
+        for child in self.iter_children() {
+            match child.name().value() {
+                "words" => {
+                    if let Some(n) = child.int_prop::<usize>("min")? {
+                        links.min_words = n;
+                    }
+                    if let Some(n) = child.int_prop::<usize>("max")? {
+                        links.max_words = n;
+                    }
+                }
+                "separator" => {
+                    links.separator = child.one_string_arg()?.chars().nth(0).unwrap();
+                }
+                "trailing-slash" => links.trailing_slash = child.one_booleanish_entry()?,
+                _ => {}
+            }
+        }
+
+        Ok(links)
     }
 
     fn parse_logging(&self) -> Result<Logging, ParseError> {
