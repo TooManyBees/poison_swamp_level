@@ -1,7 +1,7 @@
 use hyper::server::conn::http1;
 use hyper_util::rt::TokioIo;
 use poison_swamp_level::handler::{App, HandlerType, preflight, proxy};
-use poison_swamp_level::{Classifier, Config, Garbage, ServerMode};
+use poison_swamp_level::{Classifier, Config, Garbage, ServerMode, init_logger};
 use std::{
     error::Error,
     io::{self, IsTerminal},
@@ -29,9 +29,7 @@ async fn main() {
         }
     };
 
-    env_logger::builder()
-        .filter(None, config.logging.level)
-        .init();
+    init_logger(&config);
 
     let mut app_config = AppConfig::from_config(config).unwrap();
     let mut listener = app_config.listen().await.unwrap();

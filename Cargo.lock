@@ -358,6 +358,7 @@ name = "poison_swamp_level"
 version = "0.1.0"
 dependencies = [
  "aho-corasick",
+ "anstyle",
  "env_logger",
  "http",
  "hyper",

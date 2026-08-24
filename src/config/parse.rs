@@ -1,4 +1,4 @@
-use super::config::{Classifier, Config, Garbage, Logging, Server, ServerMode};
+use super::config::{Classifier, Config, Garbage, LogTarget, Logging, Server, ServerMode};
 use http::status::StatusCode;
 use kdl::{KdlDocument, KdlEntry, KdlError, KdlNode};
 use log::LevelFilter;
@@ -249,6 +249,22 @@ impl Parseable for KdlNode {
                             return Err(ParseError::from_entry(&entry, "invalid log level".into()));
                         }
                     };
+                }
+                "target" => {
+                    let entry = child.one_string_entry()?;
+                    logging.target = match entry.as_ref() {
+                        "stdout" => LogTarget::Stdout,
+                        "stderr" => LogTarget::Stderr,
+                        _ => {
+                            return Err(ParseError::from_entry(
+                                &entry,
+                                "invalid log target".into(),
+                            ));
+                        }
+                    };
+                }
+                "color" => {
+                    logging.color = child.one_booleanish_entry()?;
                 }
                 "request-handler" => {
                     logging.request_handler = child.one_booleanish_entry()?;

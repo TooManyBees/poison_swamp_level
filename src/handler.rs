@@ -2,7 +2,7 @@ use crate::classifier::{Classification, Classifier, Decision};
 use crate::garbage::Garbage;
 use hyper::service::Service;
 use hyper::{Request, Response, StatusCode, body::Incoming as IncomingBody};
-use std::{net::IpAddr, pin::Pin, sync::Arc};
+use std::{net::IpAddr, pin::Pin, sync::Arc, time::Instant};
 
 type BodyType = Response<String>;
 type HandlerOutput<'r> = (Classification<'r>, BodyType);
@@ -38,12 +38,23 @@ impl Service<Request<IncomingBody>> for App {
 
     fn call(&self, mut req: Request<IncomingBody>) -> Self::Future {
         req.extensions_mut().insert(self.client_ip);
+        let now = Instant::now();
         let (classification, resp) = (self.handler)(self, &req);
+        let elapsed = now.elapsed().as_millis();
         if self.logging {
             log::info!(
-                "Response {} {:?} decision {}",
-                resp.status().as_str(),
+                host = classification.host,
+                path = request_path(&req),
+                status = resp.status().as_u16(),
+                elapsed_ms = elapsed,
+                client_ip = classification.remote_ip,
+                asn = classification.asn,
+                poison = classification.poison,
+                user_agent = classification.agent;
+                "Response {} {} {}ms {}",
                 request_path(&req),
+                resp.status().as_u16(),
+                elapsed,
                 classification.decision,
             );
         }

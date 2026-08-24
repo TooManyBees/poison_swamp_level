@@ -136,8 +136,9 @@ impl<'a, R: Rng> Iterator for Generator<'a, R> {
     }
 }
 
-static SENTENCE_ENDINGS: &'static [&'static str] =
-    &[".", "!", "?", ".\"", "!\"", "?\"", ".”", "!”", "?”", ".)", "?)", "!)"];
+static SENTENCE_ENDINGS: &'static [&'static str] = &[
+    ".", "!", "?", ".\"", "!\"", "?\"", ".”", "!”", "?”", ".)", "?)", "!)",
+];
 
 pub fn is_ending<S: AsRef<str>>(s: S) -> bool {
     let s = s.as_ref().trim();

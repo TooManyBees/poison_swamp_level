@@ -128,6 +128,8 @@ pub enum ServerMode {
 #[derive(Debug, PartialEq, Eq)]
 pub struct Logging {
     pub level: LevelFilter,
+    pub target: LogTarget,
+    pub color: bool,
     pub request_handler: bool,
 }
 
@@ -135,7 +137,15 @@ impl Default for Logging {
     fn default() -> Logging {
         Logging {
             level: LevelFilter::Off,
+            target: LogTarget::Stderr,
+            color: false,
             request_handler: false,
         }
     }
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub enum LogTarget {
+    Stdout,
+    Stderr,
 }
