@@ -1,15 +1,11 @@
 use super::read_text::{ParseError, read, read_from_files, read_from_strings};
 use rand::{Rng, RngExt, seq::IndexedRandom};
-use std::collections::HashMap;
 use std::num::NonZeroUsize;
 use std::ops::RangeInclusive;
 use std::{borrow::Cow, fmt, mem::size_of, path::Path};
 
 pub struct Corpus {
     text: String,
-    map: HashMap<State, Box<[Substring]>>,
-    states: Box<[State]>,
-
     nodes: Box<[Node]>,
 }
 
@@ -27,8 +23,6 @@ pub struct Next {
 pub struct SizeData {
     text_bytes: usize,
     text_words: usize,
-    map_keys: usize,
-    map_bytes: usize,
     nodes_bytes: usize,
 }
 
@@ -36,56 +30,30 @@ impl fmt::Display for SizeData {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(
             f,
-            "{} words in {} bytes, map of {} states in {} bytes, nodes of {} bytes",
-            self.text_words, self.text_bytes, self.map_keys, self.map_bytes, self.nodes_bytes
+            "{} words in {} bytes, nodes of {} bytes",
+            self.text_words, self.text_bytes, self.nodes_bytes
         )
     }
 }
 
 impl Corpus {
     pub fn from_string(text: &str) -> Result<Corpus, ParseError> {
-        let (text, map, states, nodes) = read(text)?;
-        Ok(Corpus {
-            text,
-            map,
-            states,
-            nodes,
-        })
+        let (text, nodes) = read(text)?;
+        Ok(Corpus { text, nodes })
     }
 
     pub fn from_strings(texts: &[&str]) -> Result<Corpus, ParseError> {
-        let (text, map, states, nodes) = read_from_strings(texts)?;
-        Ok(Corpus {
-            text,
-            map,
-            states,
-            nodes,
-        })
+        let (text, nodes) = read_from_strings(texts)?;
+        Ok(Corpus { text, nodes })
     }
 
     pub fn from_files<P: AsRef<Path>>(paths: &[P]) -> Result<Corpus, ParseError> {
-        let (text, map, states, nodes) = read_from_files(paths)?;
-        Ok(Corpus {
-            text,
-            map,
-            states,
-            nodes,
-        })
+        let (text, nodes) = read_from_files(paths)?;
+        Ok(Corpus { text, nodes })
     }
 
     pub fn generator<R: Rng>(&self, mut rng: R) -> Generator<'_, R> {
-        let state = self.states.choose(&mut rng).copied().unwrap_or_default();
         Generator {
-            text: &self.text,
-            map: &self.map,
-            states: &self.states,
-            rng,
-            state,
-        }
-    }
-
-    pub fn generator2<R: Rng>(&self, rng: R) -> Generator2<'_, R> {
-        Generator2 {
             text: &self.text,
             nodes: &self.nodes,
             pos: 0,
@@ -94,19 +62,6 @@ impl Corpus {
     }
 
     pub fn size(&self) -> SizeData {
-        let map_bytes = size_of::<HashMap<State, Box<[Substring]>>>()
-            + self
-                .map
-                .values()
-                .map(|vs| {
-                    size_of::<State>()
-                        + size_of::<Box<[Substring]>>()
-                        + vs.len() * size_of::<Substring>()
-                })
-                .sum::<usize>();
-
-        let state_bytes = size_of::<Box<[State]>>() + self.states.len() * size_of::<State>();
-
         let nodes_bytes = size_of::<Box<[Node]>>()
             + size_of::<Node>() * self.nodes.len()
             + self
@@ -118,8 +73,6 @@ impl Corpus {
         SizeData {
             text_bytes: self.text.len(),
             text_words: 0,
-            map_keys: self.map.len(),
-            map_bytes: map_bytes + state_bytes,
             nodes_bytes,
         }
     }
@@ -127,9 +80,9 @@ impl Corpus {
     pub fn dump(&self) {
         use std::io::Write;
         let mut all_substrings: Vec<_> = self
-            .map
-            .values()
-            .flat_map(|v| v.iter().map(|s| s.of(&self.text)))
+            .nodes
+            .iter()
+            .flat_map(|n| n.next.iter().map(|next| next.word.of(&self.text)))
             .collect();
         all_substrings.sort();
         all_substrings.dedup();
@@ -151,14 +104,14 @@ impl Substring {
     }
 }
 
-pub struct Generator2<'a, R: Rng> {
+pub struct Generator<'a, R: Rng> {
     text: &'a str,
     nodes: &'a [Node],
     pos: usize,
     rng: R,
 }
 
-impl<'a, R: Rng> Iterator for Generator2<'a, R> {
+impl<'a, R: Rng> Iterator for Generator<'a, R> {
     type Item = &'a str;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -182,39 +135,6 @@ impl<'a, R: Rng> Iterator for Generator2<'a, R> {
             .unwrap_or_else(|| self.rng.random_range(..self.nodes.len()));
 
         return Some(word.word.of(self.text));
-    }
-}
-
-pub struct Generator<'a, R: Rng> {
-    text: &'a str,
-    map: &'a HashMap<State, Box<[Substring]>>,
-    states: &'a [State],
-    rng: R,
-    state: State,
-}
-
-impl<'a, R: Rng> Iterator for Generator<'a, R> {
-    type Item = &'a str;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        if self.map.is_empty() {
-            return None;
-        }
-
-        let next_word = self.state.0.of(self.text);
-
-        let next_state = match self.map.get(&self.state) {
-            Some(words) => words,
-            None => {
-                self.state = self.states.choose(&mut self.rng).copied()?;
-                &self.map[&self.state]
-            }
-        };
-
-        let next = next_state.choose(&mut self.rng)?;
-        self.state = (self.state.1, *next);
-
-        Some(next_word)
     }
 }
 
