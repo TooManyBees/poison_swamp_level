@@ -9,12 +9,7 @@ use std::path::{Path, PathBuf};
 use std::str::CharIndices;
 use std::{fmt, fs::File, io, io::Read};
 
-type Parsed = (
-    String,
-    HashMap<State, Box<[Substring]>>,
-    Box<[State]>,
-    Box<[Node]>,
-);
+type Parsed = (String, Box<[Node]>);
 
 pub fn read_from_strings(texts: &[&str]) -> Result<Parsed, ParseError> {
     let mut parse_state = ParseState::default();
@@ -133,13 +128,7 @@ impl<'a> ParseState<'a> {
                 .collect::<Box<[_]>>();
         }
 
-        let map = self
-            .map
-            .into_iter()
-            .map(|(k, v)| (k, v.into_boxed_slice()))
-            .collect();
-
-        Ok((self.compressed, map, states, nodes))
+        Ok((self.compressed, nodes))
     }
 }
 
@@ -341,7 +330,6 @@ impl fmt::Display for ParseError {
 mod test {
     use super::{Capitalized, Next, Node, Substring, Substrings, read_from_strings};
     use pretty_assertions::assert_eq;
-    use std::collections::HashMap;
     use std::num::NonZero;
 
     #[test]
@@ -499,7 +487,7 @@ mod test {
     #[test]
     fn read() {
         let texts = &["this is a string", "this is so cool", "cool beans babe"];
-        let (text, map, states, nodes) = read_from_strings(texts).unwrap();
+        let (text, nodes) = read_from_strings(texts).unwrap();
         assert_eq!(text, "thisisastringsocoolbeansbabe");
         const _START_: Substring = Substring(0, 0);
         const THIS: Substring = Substring(0, 4);
@@ -510,30 +498,30 @@ mod test {
         const COOL: Substring = Substring(15, 19);
         const BEANS: Substring = Substring(19, 24);
         const BABE: Substring = Substring(24, 28);
-        assert_eq!(
-            map,
-            HashMap::from([
-                ((_START_, _START_), vec![THIS, THIS, COOL].into()),
-                ((_START_, THIS), vec![IS, IS].into()),
-                ((THIS, IS), vec![A, SO].into()),
-                ((IS, A), vec![STRING].into()),
-                ((IS, SO), vec![COOL].into()),
-                ((_START_, COOL), vec![BEANS].into()),
-                ((COOL, BEANS), vec![BABE].into()),
-            ])
-        );
-        assert_eq!(
-            &*states,
-            &[
-                (_START_, _START_),
-                (_START_, THIS),
-                (_START_, COOL),
-                (THIS, IS),
-                (IS, A),
-                (IS, SO),
-                (COOL, BEANS),
-            ]
-        );
+        // assert_eq!(
+        //     map,
+        //     HashMap::from([
+        //         ((_START_, _START_), vec![THIS, THIS, COOL].into()),
+        //         ((_START_, THIS), vec![IS, IS].into()),
+        //         ((THIS, IS), vec![A, SO].into()),
+        //         ((IS, A), vec![STRING].into()),
+        //         ((IS, SO), vec![COOL].into()),
+        //         ((_START_, COOL), vec![BEANS].into()),
+        //         ((COOL, BEANS), vec![BABE].into()),
+        //     ])
+        // );
+        // assert_eq!(
+        //     &*states,
+        //     &[
+        //         (_START_, _START_),
+        //         (_START_, THIS),
+        //         (_START_, COOL),
+        //         (THIS, IS),
+        //         (IS, A),
+        //         (IS, SO),
+        //         (COOL, BEANS),
+        //     ]
+        // );
 
         assert_eq!(
             &*nodes,
