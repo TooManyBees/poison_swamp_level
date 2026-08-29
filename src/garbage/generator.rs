@@ -11,7 +11,7 @@ pub struct Corpus {
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct Node {
-    pub next: Box<[Next]>,
+    pub choices: Box<[Next]>,
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
@@ -67,7 +67,7 @@ impl Corpus {
             + self
                 .nodes
                 .iter()
-                .map(|n| size_of::<Next>() * n.next.len())
+                .map(|n| size_of::<Next>() * n.choices.len())
                 .sum::<usize>();
 
         SizeData {
@@ -82,7 +82,7 @@ impl Corpus {
         let mut all_substrings: Vec<_> = self
             .nodes
             .iter()
-            .flat_map(|n| n.next.iter().map(|next| next.word.of(&self.text)))
+            .flat_map(|n| n.choices.iter().map(|next| next.word.of(&self.text)))
             .collect();
         all_substrings.sort();
         all_substrings.dedup();
@@ -125,7 +125,7 @@ impl<'a, R: Rng> Iterator for Generator<'a, R> {
             .or_else(|| self.nodes.choose(&mut self.rng))?;
 
         let word = node
-            .next
+            .choices
             .choose(&mut self.rng)
             .expect("ParseState::finish asserts that each Node's next is not empty");
 

@@ -91,10 +91,10 @@ impl<'a> ParseState<'a> {
         let mut nodes = states
             .iter()
             .map(|state| {
-                let next = self
+                let choices = self
                     .map
                     .get(&state)
-                    .expect("very element of map.keys() should be in map")
+                    .expect("every element of map.keys() should be in map")
                     .iter()
                     .map(|&word| {
                         let next = indices.get(&(state.1, word)).copied().map(|n| {
@@ -103,8 +103,8 @@ impl<'a> ParseState<'a> {
                         Next { word, next }
                     })
                     .collect::<Box<[Next]>>();
-                assert!(!next.is_empty());
-                Node { next }
+                assert!(!choices.is_empty());
+                Node { choices }
             })
             .collect::<Box<[Node]>>();
 
@@ -112,8 +112,8 @@ impl<'a> ParseState<'a> {
         for (state, nexts) in self.map.iter().filter(|((_prev1, prev2), _nexts)| {
             SENTENCE_ENDINGS.contains(&prev2.of(&self.compressed))
         }) {
-            nodes[0].next = nodes[0]
-                .next
+            nodes[0].choices = nodes[0]
+                .choices
                 .iter()
                 .copied()
                 .chain(nexts.iter().map(|&word| {
@@ -541,7 +541,7 @@ mod test {
             &[
                 // (0) <start>
                 Node {
-                    next: vec![
+                    choices: vec![
                         Next {
                             word: THIS,
                             next: Some(NonZero::new(1).unwrap()) // -> is
@@ -559,7 +559,7 @@ mod test {
                 },
                 // (1) <start> this ->
                 Node {
-                    next: vec![
+                    choices: vec![
                         Next {
                             word: IS,
                             next: Some(NonZero::new(3).unwrap()) // -> a
@@ -573,7 +573,7 @@ mod test {
                 },
                 // (2) <start> cool ->
                 Node {
-                    next: vec![Next {
+                    choices: vec![Next {
                         word: BEANS,
                         next: Some(NonZero::new(6).unwrap()) // babe
                     }]
@@ -581,7 +581,7 @@ mod test {
                 },
                 // (3) this is ->
                 Node {
-                    next: vec![
+                    choices: vec![
                         Next {
                             word: A,
                             next: Some(NonZero::new(4).unwrap())
@@ -595,7 +595,7 @@ mod test {
                 },
                 // (4) is a ->
                 Node {
-                    next: vec![Next {
+                    choices: vec![Next {
                         word: STRING,
                         next: None
                     }]
@@ -603,7 +603,7 @@ mod test {
                 },
                 // (5) is so ->
                 Node {
-                    next: vec![Next {
+                    choices: vec![Next {
                         word: COOL,
                         next: None,
                     }]
@@ -611,7 +611,7 @@ mod test {
                 },
                 // (6) cool beans ->
                 Node {
-                    next: vec![Next {
+                    choices: vec![Next {
                         word: BABE,
                         next: None,
                     }]
