@@ -53,7 +53,7 @@ impl Corpus {
         Ok(Corpus { text, nodes })
     }
 
-    pub fn generator<R: Rng>(&self, mut rng: R) -> Generator<'_, R> {
+    pub fn generator<R: Rng>(&self, rng: R) -> Generator<'_, R> {
         Generator {
             text: &self.text,
             nodes: &self.nodes,
