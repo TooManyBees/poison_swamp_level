@@ -1,5 +1,6 @@
 use super::read_text::{ParseError, read, read_from_files, read_from_strings};
 use rand::{Rng, RngExt, seq::IndexedRandom};
+use std::collections::HashMap;
 use std::num::NonZeroUsize;
 use std::ops::RangeInclusive;
 use std::{borrow::Cow, fmt, mem::size_of, path::Path};
@@ -86,10 +87,22 @@ impl Corpus {
             .collect();
         all_substrings.sort();
         all_substrings.dedup();
+        let longest = all_substrings.iter().fold(HashMap::new(), |mut h, s| {
+            let slot: &mut usize = h.entry(s.len()).or_default();
+            *slot += 1;
+            h
+        });
         let mut stdout = std::io::stdout().lock();
         for substr in all_substrings {
             let _ = write!(stdout, "{}\n", substr);
         }
+        let mut sizes = longest.into_iter().collect::<Vec<(usize, usize)>>();
+        sizes.sort_by(|a, b| a.0.cmp(&b.0));
+        let _ = write!(stdout, "{:?}\n", sizes);
+    }
+
+    pub fn stats(&self) {
+        println!("{} nodes, {} leaves\n", self.nodes.len(), self.nodes.iter().map(|n| n.choices.len()).sum::<usize>());
     }
 }
 
