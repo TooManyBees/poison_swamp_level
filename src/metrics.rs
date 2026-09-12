@@ -12,7 +12,8 @@ pub struct Metrics {
     request_counter: HashMap<MetricKey, AtomicU64>,
     classification_spam_counter: HashMap<MetricKey, AtomicU64>,
     classification_valid_counter: HashMap<MetricKey, AtomicU64>,
-    asn_counter: HashMap<MetricKey, AtomicU64>,
+    asn_known_counter: HashMap<MetricKey, AtomicU64>,
+    asn_hidden_counter: HashMap<MetricKey, AtomicU64>,
 
     output_buffer: String,
 }
@@ -51,13 +52,25 @@ impl Metrics {
             .fetch_add(1, Ordering::Release);
     }
 
-    pub fn increment_asn(&mut self, asn: u32) {
+    pub fn increment_asn_known(&mut self, asn: u32) {
         let label = MetricLabel("asn", asn.to_string());
         let key = MetricKey {
-            name: "asns",
+            name: "asns_known",
             labels: vec![label],
         };
-        self.asn_counter
+        self.asn_known_counter
+            .entry(key)
+            .or_insert(AtomicU64::new(0))
+            .fetch_add(1, Ordering::Release);
+    }
+
+    pub fn increment_asn_hidden(&mut self, asn: u32) {
+        let label = MetricLabel("asn", asn.to_string());
+        let key = MetricKey {
+            name: "asns_hidden",
+            labels: vec![label],
+        };
+        self.asn_hidden_counter
             .entry(key)
             .or_insert(AtomicU64::new(0))
             .fetch_add(1, Ordering::Release);
@@ -93,13 +106,22 @@ impl Metrics {
                 "Number of valid classifications",
             );
         }
-        for (key, inner) in &self.asn_counter {
+        for (key, inner) in &self.asn_known_counter {
             append_metric_output(
                 &mut output_buffer,
                 key,
                 inner,
                 "counter",
                 "ASNs whence originate spam",
+            );
+        }
+        for (key, inner) in &self.asn_hidden_counter {
+            append_metric_output(
+                &mut output_buffer,
+                key,
+                inner,
+                "counter",
+                "ASNs hiding spam",
             );
         }
         self.output_buffer = output_buffer;
@@ -193,21 +215,21 @@ pub fn record_request(metrics: &Mutex<Metrics>, c: Classification) {
                 labels.push(MetricLabel("reason", "poison".into()));
                 metrics.increment_classification_spam(labels);
                 if let Some(asn) = c.asn {
-                    metrics.increment_asn(asn);
+                    metrics.increment_asn_hidden(asn);
                 }
             }
             SpamReason::UnwantedASN(_) => {
                 labels.push(MetricLabel("reason", "unwanted ASN".into()));
                 metrics.increment_classification_spam(labels);
                 if let Some(asn) = c.asn {
-                    metrics.increment_asn(asn);
+                    metrics.increment_asn_known(asn);
                 }
             }
             SpamReason::UnwantedAgent(_) => {
                 labels.push(MetricLabel("reason", "unwanted agent".into()));
                 metrics.increment_classification_spam(labels);
                 if let Some(asn) = c.asn {
-                    metrics.increment_asn(asn);
+                    metrics.increment_asn_known(asn);
                 }
             }
             SpamReason::TrustedDecision => {}

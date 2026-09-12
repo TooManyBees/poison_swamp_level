@@ -191,11 +191,6 @@ impl Classifier {
             return info;
         }
 
-        if let Some(poison) = info.poison {
-            info.decision = Decision::Spam(SpamReason::Poison(poison));
-            return info;
-        }
-
         if let Some(agent) = self.unwanted_agent(info.agent) {
             info.decision = Decision::Spam(SpamReason::UnwantedAgent(agent));
             return info;
@@ -203,6 +198,11 @@ impl Classifier {
 
         if let Some(asn) = info.asn.filter(|asn| self.unwanted_asns.contains(&asn)) {
             info.decision = Decision::Spam(SpamReason::UnwantedASN(asn));
+            return info;
+        }
+
+        if let Some(poison) = info.poison {
+            info.decision = Decision::Spam(SpamReason::Poison(poison));
             return info;
         }
 
