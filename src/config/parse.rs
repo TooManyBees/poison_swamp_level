@@ -97,6 +97,8 @@ impl Parseable for KdlNode {
     fn parse_server(&self) -> Result<Server, ParseError> {
         let mut server = Server::default();
 
+        // return Err(ParseError::from_node(self, "dang!".into()));
+
         let mode_entry = self.one_string_entry()?;
         match mode_entry.as_ref() {
             "proxy" => server.mode = ServerMode::Proxy,
@@ -487,10 +489,12 @@ impl ParseError {
             ParseError::Io(e) => Explain {
                 location: None,
                 message: e.to_string(),
+                kind: ExplainKind::Span,
             },
             ParseError::Kdl(e) => Explain {
                 location: None,
                 message: e.to_string(),
+                kind: ExplainKind::Span,
             },
             ParseError::InvalidBlock {
                 source,
@@ -500,6 +504,7 @@ impl ParseError {
             } => Explain {
                 location: source.zip(Some(span)),
                 message: message.clone(),
+                kind: ExplainKind::Block,
             },
             ParseError::InvalidSpan {
                 source,
@@ -508,6 +513,7 @@ impl ParseError {
             } => Explain {
                 location: source.zip(Some(span)),
                 message: message.clone(),
+                kind: ExplainKind::Span,
             },
         }
     }
@@ -516,6 +522,12 @@ impl ParseError {
 pub struct Explain {
     location: Option<(String, (usize, usize))>,
     message: String,
+    kind: ExplainKind,
+}
+
+enum ExplainKind {
+    Span,
+    Block,
 }
 
 #[derive(Debug)]
@@ -532,19 +544,33 @@ impl fmt::Display for Explain {
             let line = source[..start].lines().count().max(1);
             let col = start - back_n_newlines(1, source, start);
             let highlighted_span = &source[start..end];
-            let snippet = expand_source(&source, (start, end));
-            write!(
-                f,
-                "{} at {} on line {}:\n",
-                self.message, highlighted_span, line
-            )?;
-            let location = Location {
-                start,
-                end,
-                line,
-                col,
-            };
-            annotate_span(f, snippet, line.saturating_sub(2).max(1), location)
+            match self.kind {
+                ExplainKind::Block => {
+                    write!(f, "{} on line {}:\n", self.message, line)?;
+                    let location = Location {
+                        start,
+                        end,
+                        line,
+                        col,
+                    };
+                    annotate_block(f, highlighted_span, location)
+                }
+                ExplainKind::Span => {
+                    let snippet = expand_source(&source, (start, end));
+                    write!(
+                        f,
+                        "{} at {} on line {}:\n",
+                        self.message, highlighted_span, line
+                    )?;
+                    let location = Location {
+                        start,
+                        end,
+                        line,
+                        col,
+                    };
+                    annotate_span(f, snippet, line.saturating_sub(2).max(1), location)
+                }
+            }
         } else {
             f.write_str(&self.message)
         }
@@ -596,6 +622,22 @@ fn annotate_span(
             f.write_str(&"^".repeat(location.end - location.start))?;
             f.write_char('\n')?;
         }
+    }
+    Ok(())
+}
+
+fn annotate_block(f: &mut fmt::Formatter, source: &str, location: Location) -> fmt::Result {
+    let max_line = location.line + source.lines().count() - 1;
+    let num_cols = max_line.checked_ilog10().unwrap_or(1).max(1) as usize;
+    f.write_char('\n')?;
+    for (n, line) in source.lines().enumerate() {
+        let line_no = n + location.line;
+        let bracket = match line_no {
+            n if n == location.line => '⎡',
+            n if n == max_line => '⎣',
+            _ => '⎢',
+        };
+        write!(f, "{line_no:width$}  {bracket}  {line}\n", width = num_cols)?;
     }
     Ok(())
 }
