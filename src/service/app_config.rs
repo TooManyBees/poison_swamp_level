@@ -6,6 +6,7 @@ use crate::service::OptionalListener;
 use crate::service::handler::{HandlerType, MetricsHandler, PslHandler, preflight, proxy};
 use hyper::server::conn::http1;
 use hyper_util::rt::TokioIo;
+use hyper_util::server::graceful::GracefulShutdown;
 use std::{
     error::Error,
     io,
@@ -104,13 +105,19 @@ impl AppConfig {
         }
     }
 
-    pub fn handle_connection(&self, result: io::Result<(TcpStream, SocketAddr)>) {
+    pub fn handle_connection(
+        &self,
+        result: io::Result<(TcpStream, SocketAddr)>,
+        graceful: &GracefulShutdown,
+    ) {
         match result {
             Ok((stream, addr)) => {
                 let io = TokioIo::new(stream);
                 let app = self.to_service(addr.ip());
+                let conn = http1::Builder::new().serve_connection(io, app);
+                let fut = graceful.watch(conn);
                 tokio::task::spawn(async move {
-                    if let Err(e) = http1::Builder::new().serve_connection(io, app).await {
+                    if let Err(e) = fut.await {
                         println!("Failed to serve connection: {e}");
                     }
                 });
@@ -119,13 +126,19 @@ impl AppConfig {
         }
     }
 
-    pub fn handle_metrics(&self, result: io::Result<(TcpStream, SocketAddr)>) {
+    pub fn handle_metrics(
+        &self,
+        result: io::Result<(TcpStream, SocketAddr)>,
+        graceful: &GracefulShutdown,
+    ) {
         match result {
             Ok((stream, _addr)) => {
                 let io = TokioIo::new(stream);
                 let app = self.to_metric_service();
+                let conn = http1::Builder::new().serve_connection(io, app);
+                let fut = graceful.watch(conn);
                 tokio::task::spawn(async move {
-                    if let Err(e) = http1::Builder::new().serve_connection(io, app).await {
+                    if let Err(e) = fut.await {
                         println!("Failed to serve metrics: {e}");
                     }
                 });

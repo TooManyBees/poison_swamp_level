@@ -1,8 +1,12 @@
+use hyper_util::server::graceful::GracefulShutdown;
 use poison_swamp_level::service::AppConfig;
 use poison_swamp_level::{Config, init_logger};
 use std::io::{self, IsTerminal};
+use std::time::Duration;
+use tokio::time::sleep;
 #[cfg(unix)]
 use tokio::{
+    signal::ctrl_c,
     signal::unix::{SignalKind, signal},
     sync::{mpsc, mpsc::Sender},
 };
@@ -35,28 +39,36 @@ async fn main() {
         .await
         .unwrap_or_else(|_| std::process::exit(1));
 
+    // Signal handlers for reloading the config
     #[cfg(unix)]
-    let mut sighup = signal(SignalKind::hangup()).unwrap();
+    let mut sighup = signal(SignalKind::hangup()).expect("Failed to install SIGHUP handler");
     #[cfg(unix)]
     let (config_reload_tx, mut config_reload) = mpsc::channel::<AppConfig>(1);
+
+    // Signal handlers for shutting down
+    #[cfg(unix)]
+    let mut sigterm = signal(SignalKind::terminate()).expect("Failed to install SIGTERM handler");
+    let mut shutdown_signal = std::pin::pin!(ctrl_c_handler());
+    let graceful = GracefulShutdown::new();
 
     loop {
         #[cfg(not(unix))]
         tokio::select! {
             listen_result = listener.accept() => {
-                app_config.handle_connection(listen_result);
+                app_config.handle_connection(listen_result, &graceful);
             },
             metrics_listen_result = metrics_listener.accept() => {
-                app_config.handle_metrics(metrics_listen_result);
+                app_config.handle_metrics(metrics_listen_result, &graceful);
             },
+            _ = &mut shutdown_signal => break,
         }
         #[cfg(unix)]
         tokio::select! {
             listen_result = listener.accept() => {
-                app_config.handle_connection(listen_result);
+                app_config.handle_connection(listen_result, &graceful);
             },
             metrics_listen_result = metrics_listener.accept() => {
-                app_config.handle_metrics(metrics_listen_result);
+                app_config.handle_metrics(metrics_listen_result, &graceful);
             },
             Some(new_app_config) = config_reload.recv() => {
                 let mut new_listener = None;
@@ -93,8 +105,21 @@ async fn main() {
             _ = sighup.recv() => {
                 reload_config(&app_config, config_reload_tx.clone());
             },
+            _ = sigterm.recv() => break,
+            _ = &mut shutdown_signal => break,
         }
     }
+
+    tokio::select! {
+        _ = graceful.shutdown() => {}
+        _ = sleep(Duration::from_secs(5)) => {}
+    }
+}
+
+async fn ctrl_c_handler() {
+    ctrl_c()
+        .await
+        .expect("Failed to install SIGINT/Ctrl-C handler");
 }
 
 #[cfg(unix)]
