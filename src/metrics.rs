@@ -10,13 +10,44 @@ use std::sync::{
     atomic::{AtomicU64, Ordering},
 };
 
-#[derive(Debug, Default)]
+#[derive(Debug)]
+struct NamedHashMap {
+    inner: HashMap<MetricKey, AtomicU64>,
+    name: CompactString,
+    desc: &'static str,
+}
+
+impl std::ops::Deref for NamedHashMap {
+    type Target = HashMap<MetricKey, AtomicU64>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.inner
+    }
+}
+
+impl std::ops::DerefMut for NamedHashMap {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.inner
+    }
+}
+
+impl NamedHashMap {
+    fn new(name: &'static str, desc: &'static str) -> Self {
+        NamedHashMap {
+            inner: HashMap::new(),
+            name: CompactString::const_new(name),
+            desc,
+        }
+    }
+}
+
+#[derive(Debug)]
 pub struct Metrics {
-    request_counter: HashMap<MetricKey, AtomicU64>,
-    classification_spam_counter: HashMap<MetricKey, AtomicU64>,
-    classification_valid_counter: HashMap<MetricKey, AtomicU64>,
-    asn_known_counter: HashMap<MetricKey, AtomicU64>,
-    asn_hidden_counter: HashMap<MetricKey, AtomicU64>,
+    request_counter: NamedHashMap,
+    classification_spam_counter: NamedHashMap,
+    classification_valid_counter: NamedHashMap,
+    asn_known_counter: NamedHashMap,
+    asn_hidden_counter: NamedHashMap,
 
     output_buffer: String,
 }
@@ -24,7 +55,7 @@ pub struct Metrics {
 impl Metrics {
     pub fn increment_request(&mut self, labels: Vec<MetricLabel>) {
         let key = MetricKey {
-            name: CompactString::const_new("requests"),
+            name: self.request_counter.name.clone(),
             labels,
         };
         self.request_counter
@@ -35,7 +66,7 @@ impl Metrics {
 
     pub fn increment_classification_spam(&mut self, labels: Vec<MetricLabel>) {
         let key = MetricKey {
-            name: CompactString::const_new("classifications_spam"),
+            name: self.classification_spam_counter.name.clone(),
             labels,
         };
         self.classification_spam_counter
@@ -46,7 +77,7 @@ impl Metrics {
 
     pub fn increment_classification_valid(&mut self, labels: Vec<MetricLabel>) {
         let key = MetricKey {
-            name: CompactString::const_new("classifications_valid"),
+            name: self.classification_valid_counter.name.clone(),
             labels,
         };
         self.classification_valid_counter
@@ -58,7 +89,7 @@ impl Metrics {
     pub fn increment_asn_known(&mut self, asn: u32) {
         let label = MetricLabel(CompactString::const_new("asn"), asn.to_compact_string());
         let key = MetricKey {
-            name: CompactString::const_new("asns_known"),
+            name: self.asn_known_counter.name.clone(),
             labels: vec![label],
         };
         self.asn_known_counter
@@ -70,7 +101,7 @@ impl Metrics {
     pub fn increment_asn_hidden(&mut self, asn: u32) {
         let label = MetricLabel(CompactString::const_new("asn"), asn.to_compact_string());
         let key = MetricKey {
-            name: CompactString::const_new("asns_hidden"),
+            name: self.asn_hidden_counter.name.clone(),
             labels: vec![label],
         };
         self.asn_hidden_counter
@@ -82,90 +113,12 @@ impl Metrics {
     pub fn to_prometheus(&mut self) -> String {
         let mut output_buffer = std::mem::take(&mut self.output_buffer);
         output_buffer.clear();
-        if !self.request_counter.is_empty() {
-            append_metric_label(
-                &mut output_buffer,
-                "requests",
-                "counter",
-                "Number of requests",
-            );
-        }
-        for (key, inner) in &self.request_counter {
-            append_metric_value(
-                &mut output_buffer,
-                "requests",
-                &key.labels,
-                MetricValue::AtomicInt(inner),
-            );
-        }
 
-        if !self.classification_spam_counter.is_empty() {
-            append_metric_label(
-                &mut output_buffer,
-                "classifications_spam",
-                "counter",
-                "Number of spam classifications",
-            );
-        }
-        for (key, inner) in &self.classification_spam_counter {
-            append_metric_value(
-                &mut output_buffer,
-                "classifications_spam",
-                &key.labels,
-                MetricValue::AtomicInt(inner),
-            );
-        }
-
-        if !self.classification_valid_counter.is_empty() {
-            append_metric_label(
-                &mut output_buffer,
-                "classifications_valid",
-                "counter",
-                "Number of valid classifications",
-            );
-        }
-        for (key, inner) in &self.classification_valid_counter {
-            append_metric_value(
-                &mut output_buffer,
-                "classifications_valid",
-                &key.labels,
-                MetricValue::AtomicInt(inner),
-            );
-        }
-
-        if !self.asn_known_counter.is_empty() {
-            append_metric_label(
-                &mut output_buffer,
-                "asns_known",
-                "counter",
-                "ASNs whence originate spam",
-            );
-        }
-        for (key, inner) in &self.asn_known_counter {
-            append_metric_value(
-                &mut output_buffer,
-                "asns_known",
-                &key.labels,
-                MetricValue::AtomicInt(inner),
-            );
-        }
-
-        if !self.asn_hidden_counter.is_empty() {
-            append_metric_label(
-                &mut output_buffer,
-                "asns_hidden",
-                "counter",
-                "ASNs hiding spam",
-            );
-        }
-        for (key, inner) in &self.asn_hidden_counter {
-            append_metric_value(
-                &mut output_buffer,
-                "asns_hidden",
-                &key.labels,
-                MetricValue::AtomicInt(inner),
-            );
-        }
+        append_metric(&mut output_buffer, &self.request_counter);
+        append_metric(&mut output_buffer, &self.classification_spam_counter);
+        append_metric(&mut output_buffer, &self.classification_valid_counter);
+        append_metric(&mut output_buffer, &self.asn_known_counter);
+        append_metric(&mut output_buffer, &self.asn_hidden_counter);
 
         #[cfg(target_os = "linux")]
         append_procfs_metrics(&mut output_buffer);
@@ -180,6 +133,22 @@ enum MetricValue<'a> {
     Int(i64),
     AtomicInt(&'a AtomicU64),
     Float(f64),
+}
+
+fn append_metric(output_buffer: &mut String, metric: &NamedHashMap) {
+    if metric.is_empty() {
+        return;
+    }
+
+    append_metric_label(output_buffer, &metric.name, "counter", metric.desc);
+    for (key, inner) in metric.iter() {
+        append_metric_value(
+            output_buffer,
+            &metric.name,
+            &key.labels,
+            MetricValue::AtomicInt(inner),
+        )
+    }
 }
 
 fn append_metric_label(
@@ -241,9 +210,20 @@ struct MetricKey {
 }
 
 pub fn init(config: &Config) -> Arc<Mutex<Metrics>> {
-    let metrics = Metrics::default();
-
-    // TODO: load and set persisted metrics
+    let metrics = Metrics {
+        request_counter: NamedHashMap::new("requests", "Number of requests"),
+        classification_spam_counter: NamedHashMap::new(
+            "classifications_spam",
+            "Number of spam classifications",
+        ),
+        classification_valid_counter: NamedHashMap::new(
+            "classifications_valid",
+            "Number of valid classifications",
+        ),
+        asn_known_counter: NamedHashMap::new("asns_known", "ASNs whence originate spam"),
+        asn_hidden_counter: NamedHashMap::new("asns_hidden", "ASNs hiding spam"),
+        output_buffer: String::new(),
+    };
 
     Arc::new(Mutex::new(metrics))
 }
