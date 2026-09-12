@@ -26,4 +26,9 @@ procfs = { version = "0.18.0", default-features = false }
 libc = "0.2"
 
 [dev-dependencies]
+criterion = "0.8.2"
 pretty_assertions = "1.4.1"
+
+[[bench]]
+name = "markov_generator"
+harness = false
