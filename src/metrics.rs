@@ -2,7 +2,9 @@ use crate::classifier::{Classification, Decision, SpamReason, ValidReason};
 use crate::config::Config;
 use compact_str::{CompactString, ToCompactString};
 use std::collections::HashMap;
-use std::fmt::Write;
+use std::fmt::{self, Write};
+use std::fs::File;
+use std::io::{self, ErrorKind};
 #[cfg(target_os = "linux")]
 use std::sync::LazyLock;
 use std::sync::{
@@ -10,7 +12,7 @@ use std::sync::{
     atomic::{AtomicU64, Ordering},
 };
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 struct NamedHashMap {
     inner: HashMap<MetricKey, AtomicU64>,
     name: CompactString,
@@ -49,6 +51,7 @@ pub struct Metrics {
     asn_known_counter: NamedHashMap,
     asn_hidden_counter: NamedHashMap,
 
+    persist_path: Option<String>,
     output_buffer: String,
 }
 
@@ -210,7 +213,7 @@ struct MetricKey {
 }
 
 pub fn init(config: &Config) -> Arc<Mutex<Metrics>> {
-    let metrics = Metrics {
+    let mut metrics = Metrics {
         request_counter: NamedHashMap::new("requests", "Number of requests"),
         classification_spam_counter: NamedHashMap::new(
             "classifications_spam",
@@ -222,8 +225,28 @@ pub fn init(config: &Config) -> Arc<Mutex<Metrics>> {
         ),
         asn_known_counter: NamedHashMap::new("asns_known", "ASNs whence originate spam"),
         asn_hidden_counter: NamedHashMap::new("asns_hidden", "ASNs hiding spam"),
+        persist_path: None,
         output_buffer: String::new(),
     };
+
+    if let Some(path) = config
+        .metrics
+        .as_ref()
+        .and_then(|metrics| metrics.persist_path.as_ref())
+    {
+        metrics.persist_path = Some(path.clone());
+
+        match load_persisted_metrics(path) {
+            Ok(Some(p)) => {
+                apply_persisted_metrics(&mut metrics, p);
+                log::debug!("Loaded persisted metrics at {path}");
+            }
+            Ok(None) => log::debug!("No persisted metrics to load at {path}"),
+            Err(e) => {
+                log::error!("Couldn't load persisted metrics from {path}: {e}");
+            }
+        }
+    }
 
     Arc::new(Mutex::new(metrics))
 }
@@ -392,6 +415,117 @@ fn append_procfs_metrics(output_buffer: &mut String) {
                     )],
                     MetricValue::Int(max as i64),
                 );
+            }
+        }
+    }
+}
+
+type PersistedMetrics = HashMap<CompactString, Vec<(Vec<(CompactString, CompactString)>, u64)>>;
+
+enum PersistenceError {
+    Io(io::Error),
+    Json(serde_json::Error),
+}
+
+impl fmt::Display for PersistenceError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            PersistenceError::Io(e) => e.fmt(f),
+            PersistenceError::Json(e) => e.fmt(f),
+        }
+    }
+}
+
+fn load_persisted_metrics(path: &str) -> Result<Option<PersistedMetrics>, PersistenceError> {
+    let f = match File::open(path) {
+        Ok(f) => f,
+        Err(e) => {
+            if e.kind() == ErrorKind::NotFound {
+                return Ok(None);
+            } else {
+                return Err(PersistenceError::Io(e));
+            }
+        }
+    };
+    let persisted: PersistedMetrics = serde_json::from_reader(f).map_err(PersistenceError::Json)?;
+    Ok(Some(persisted))
+}
+
+fn apply_persisted_metrics(metrics: &mut Metrics, mut persisted: PersistedMetrics) {
+    extract_persisted_metric(&mut metrics.request_counter, &mut persisted);
+    extract_persisted_metric(&mut metrics.classification_spam_counter, &mut persisted);
+    extract_persisted_metric(&mut metrics.classification_valid_counter, &mut persisted);
+    extract_persisted_metric(&mut metrics.asn_known_counter, &mut persisted);
+    extract_persisted_metric(&mut metrics.asn_hidden_counter, &mut persisted);
+}
+
+fn extract_persisted_metric(map: &mut NamedHashMap, persisted: &mut PersistedMetrics) {
+    if let Some(ms) = persisted.remove(&map.name) {
+        for (labels, value) in ms {
+            let labels = labels
+                .into_iter()
+                .map(|(name, value)| MetricLabel(name, value))
+                .collect();
+            let key = MetricKey {
+                name: map.name.clone(),
+                labels,
+            };
+            map.insert(key, AtomicU64::from(value));
+        }
+    }
+}
+
+fn write_persisted_metrics(path: &str, metrics: &mut Metrics) -> Result<(), PersistenceError> {
+    let mut persisted: PersistedMetrics = HashMap::new();
+
+    metrics_into_persisted(&mut persisted, std::mem::take(&mut metrics.request_counter));
+    metrics_into_persisted(
+        &mut persisted,
+        std::mem::take(&mut metrics.classification_spam_counter),
+    );
+    metrics_into_persisted(
+        &mut persisted,
+        std::mem::take(&mut metrics.classification_valid_counter),
+    );
+    metrics_into_persisted(
+        &mut persisted,
+        std::mem::take(&mut metrics.asn_known_counter),
+    );
+    metrics_into_persisted(
+        &mut persisted,
+        std::mem::take(&mut metrics.asn_hidden_counter),
+    );
+
+    let f = File::create(path).map_err(PersistenceError::Io)?;
+    serde_json::to_writer_pretty(f, &persisted).map_err(PersistenceError::Json)?;
+
+    Ok(())
+}
+
+fn metrics_into_persisted(persisted: &mut PersistedMetrics, metric: NamedHashMap) {
+    persisted.insert(
+        metric.name.clone(),
+        metric
+            .inner
+            .into_iter()
+            .map(|(key, value)| {
+                let labels = key
+                    .labels
+                    .into_iter()
+                    .map(|MetricLabel(name, val)| (name, val))
+                    .collect();
+                (labels, value.into_inner())
+            })
+            .collect(),
+    );
+}
+
+impl Drop for Metrics {
+    fn drop(&mut self) {
+        if let Some(path) = self.persist_path.clone() {
+            match write_persisted_metrics(&path, self) {
+                Ok(_) => log::debug!("Persisted metrics to {path}"),
+                Err(e) => log::error!("Failed to persist metrics to {path}: {e}"),
             }
         }
     }
