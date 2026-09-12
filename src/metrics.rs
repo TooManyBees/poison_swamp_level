@@ -33,7 +33,7 @@ impl Metrics {
 
     pub fn increment_classification_spam(&mut self, labels: Vec<MetricLabel>) {
         let key = MetricKey {
-            name: CompactString::const_new("classifications.spam"),
+            name: CompactString::const_new("classifications_spam"),
             labels,
         };
         self.classification_spam_counter
@@ -44,7 +44,7 @@ impl Metrics {
 
     pub fn increment_classification_valid(&mut self, labels: Vec<MetricLabel>) {
         let key = MetricKey {
-            name: CompactString::const_new("classifications.valid"),
+            name: CompactString::const_new("classifications_valid"),
             labels,
         };
         self.classification_valid_counter
