@@ -156,12 +156,14 @@ pub enum LogTarget {
 #[derive(Debug, PartialEq, Eq)]
 pub struct Metrics {
     pub listen: SocketAddr,
+    pub persist_path: Option<String>,
 }
 
 impl Default for Metrics {
     fn default() -> Metrics {
         Metrics {
             listen: SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::new(127, 0, 0, 1), 4001)),
+            persist_path: None,
         }
     }
 }

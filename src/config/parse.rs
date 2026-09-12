@@ -304,6 +304,9 @@ impl Parseable for KdlNode {
                         ParseError::from_entry(&entry, "invalid socket address".into())
                     })?;
                 }
+                "persist-path" => {
+                    metrics.persist_path = Some(child.one_string_arg()?);
+                }
                 _ => {}
             }
         }
