@@ -1,18 +1,6 @@
-use hyper::server::conn::http1;
-use hyper_util::rt::TokioIo;
-use poison_swamp_level::handler::{App, HandlerType, MetricApp, preflight, proxy};
-use poison_swamp_level::{Classifier, Config, Garbage, ServerMode, init_logger};
-use poison_swamp_level::{metrics, metrics::Metrics};
-use std::{
-    error::Error,
-    future::Future,
-    io::{self, IsTerminal},
-    net::{IpAddr, SocketAddr},
-    pin::Pin,
-    sync::{Arc, Mutex},
-    task::{Context, Poll},
-};
-use tokio::net::{TcpListener, TcpStream};
+use poison_swamp_level::service::AppConfig;
+use poison_swamp_level::{Config, init_logger};
+use std::io::{self, IsTerminal};
 #[cfg(unix)]
 use tokio::{
     signal::unix::{SignalKind, signal},
@@ -65,10 +53,10 @@ async fn main() {
         #[cfg(unix)]
         tokio::select! {
             listen_result = listener.accept() => {
-                handle_connection(&app_config, listen_result);
+                app_config.handle_connection(listen_result);
             },
             metrics_listen_result = metrics_listener.accept() => {
-                handle_metrics(&app_config, metrics_listen_result);
+                app_config.handle_metrics(metrics_listen_result);
             },
             Some(new_app_config) = config_reload.recv() => {
                 let mut new_listener = None;
@@ -109,127 +97,6 @@ async fn main() {
     }
 }
 
-struct AppConfig {
-    config: Config,
-    classifier: Arc<Classifier>,
-    garbage: Arc<Garbage>,
-    handler: HandlerType,
-    metrics: Arc<Mutex<Metrics>>,
-}
-
-impl AppConfig {
-    fn from_config(config: Config) -> Result<Self, Box<dyn Error>> {
-        let classifier = Classifier::new(&config)?;
-        let garbage = Garbage::new(&config)?;
-        let metrics = metrics::init(&config);
-
-        let handler = match config.server.mode {
-            ServerMode::Proxy => proxy,
-            ServerMode::Preflight => preflight,
-        };
-
-        Ok(AppConfig {
-            config,
-            classifier: Arc::new(classifier),
-            garbage: Arc::new(garbage),
-            handler,
-            metrics,
-        })
-    }
-
-    fn to_service(&self, client_ip: IpAddr) -> App {
-        App {
-            client_ip,
-            classifier: self.classifier.clone(),
-            garbage: self.garbage.clone(),
-            handler: self.handler,
-            status_code_valid: self.config.server.status_code_valid,
-            status_code_spam: self.config.server.status_code_spam,
-            logging: self.config.logging.request_handler,
-            metrics: self.metrics.clone(),
-        }
-    }
-
-    fn to_metric_service(&self) -> MetricApp {
-        MetricApp {
-            metrics: self.metrics.clone(),
-        }
-    }
-
-    fn listen_addr(&self) -> SocketAddr {
-        self.config.server.listen
-    }
-
-    fn listen_metrics_addr(&self) -> Option<SocketAddr> {
-        self.config.metrics.as_ref().map(|metrics| metrics.listen)
-    }
-
-    fn same_as(&self, other: &Config) -> bool {
-        self.config == *other
-    }
-
-    async fn listen(&self) -> io::Result<TcpListener> {
-        match TcpListener::bind(self.listen_addr()).await {
-            Ok(l) => {
-                log::info!("Listening on {}", self.listen_addr());
-                Ok(l)
-            }
-            Err(e) => {
-                log::error!("Could not listen on {}: {}", self.listen_addr(), e);
-                Err(e)
-            }
-        }
-    }
-
-    async fn listen_metrics(&self) -> io::Result<OptionalListener> {
-        let addr = match self.listen_metrics_addr() {
-            None => return Ok(OptionalListener::None),
-            Some(addr) => addr,
-        };
-
-        match TcpListener::bind(addr).await {
-            Ok(l) => {
-                log::info!("Metrics listening on {}", addr);
-                Ok(OptionalListener::Some(l))
-            }
-            Err(e) => {
-                log::error!("Could not listen on {}: {}", addr, e);
-                Err(e)
-            }
-        }
-    }
-}
-
-fn handle_connection(app_config: &AppConfig, result: io::Result<(TcpStream, SocketAddr)>) {
-    match result {
-        Ok((stream, addr)) => {
-            let io = TokioIo::new(stream);
-            let app = app_config.to_service(addr.ip());
-            tokio::task::spawn(async move {
-                if let Err(e) = http1::Builder::new().serve_connection(io, app).await {
-                    println!("Failed to serve connection: {e}");
-                }
-            });
-        }
-        Err(e) => log::error!("error handling connection: {e}"),
-    }
-}
-
-fn handle_metrics(app_config: &AppConfig, result: io::Result<(TcpStream, SocketAddr)>) {
-    match result {
-        Ok((stream, _addr)) => {
-            let io = TokioIo::new(stream);
-            let app = app_config.to_metric_service();
-            tokio::task::spawn(async move {
-                if let Err(e) = http1::Builder::new().serve_connection(io, app).await {
-                    println!("Failed to serve metrics: {e}");
-                }
-            });
-        }
-        Err(e) => log::error!("error handling metrics: {e}"),
-    }
-}
-
 #[cfg(unix)]
 fn reload_config(existing: &AppConfig, tx: Sender<AppConfig>) {
     let new_config = match Config::read_from_file("./config.kdl") {
@@ -251,34 +118,4 @@ fn reload_config(existing: &AppConfig, tx: Sender<AppConfig>) {
             log::error!("Config reload encountered error: {e}");
         }),
     });
-}
-
-enum OptionalListener {
-    None,
-    Some(TcpListener),
-}
-
-enum TcpListenerFuture<'l> {
-    None,
-    Some(&'l TcpListener),
-}
-
-impl OptionalListener {
-    fn accept<'l>(&'l self) -> TcpListenerFuture<'l> {
-        match self {
-            OptionalListener::None => TcpListenerFuture::None,
-            OptionalListener::Some(listener) => TcpListenerFuture::Some(&listener),
-        }
-    }
-}
-
-impl<'l> Future for TcpListenerFuture<'l> {
-    type Output = io::Result<(TcpStream, SocketAddr)>;
-
-    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        match *self {
-            TcpListenerFuture::None => Poll::Pending,
-            TcpListenerFuture::Some(f) => f.poll_accept(cx),
-        }
-    }
 }

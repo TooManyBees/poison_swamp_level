@@ -13,10 +13,10 @@ use std::{
 type BodyType = Response<String>;
 type HandlerOutput<'r> = (Classification<'r>, BodyType);
 type ServiceFuture = Pin<Box<dyn Future<Output = Result<BodyType, hyper::Error>> + Send>>;
-pub type HandlerType = for<'r> fn(&App, &'r Request<IncomingBody>) -> HandlerOutput<'r>;
+pub type HandlerType = for<'r> fn(&PslHandler, &'r Request<IncomingBody>) -> HandlerOutput<'r>;
 
 #[derive(Debug, Clone)]
-pub struct App {
+pub struct PslHandler {
     pub client_ip: IpAddr,
     pub classifier: Arc<Classifier>,
     pub garbage: Arc<Garbage>,
@@ -27,7 +27,7 @@ pub struct App {
     pub metrics: Arc<Mutex<Metrics>>,
 }
 
-impl App {
+impl PslHandler {
     fn garbage_response<B>(&self, req: &Request<B>) -> Response<String> {
         let path = request_path(&req);
         let body = self.garbage.render(path);
@@ -38,7 +38,7 @@ impl App {
     }
 }
 
-impl Service<Request<IncomingBody>> for App {
+impl Service<Request<IncomingBody>> for PslHandler {
     type Response = BodyType;
     type Error = hyper::Error;
     type Future = ServiceFuture;
@@ -71,7 +71,7 @@ impl Service<Request<IncomingBody>> for App {
     }
 }
 
-pub fn proxy<'r>(app: &App, req: &'r Request<IncomingBody>) -> HandlerOutput<'r> {
+pub fn proxy<'r>(app: &PslHandler, req: &'r Request<IncomingBody>) -> HandlerOutput<'r> {
     let classification = app.classifier.classify(&req);
     match classification.decision {
         Decision::Valid(_) => {
@@ -82,7 +82,7 @@ pub fn proxy<'r>(app: &App, req: &'r Request<IncomingBody>) -> HandlerOutput<'r>
     }
 }
 
-pub fn preflight<'r>(app: &App, req: &'r Request<IncomingBody>) -> HandlerOutput<'r> {
+pub fn preflight<'r>(app: &PslHandler, req: &'r Request<IncomingBody>) -> HandlerOutput<'r> {
     if let Some(classification) = app.classifier.trusted_decision(&req) {
         if let Decision::Spam(_) = classification.decision {
             let resp = app.garbage_response(&req);
@@ -115,11 +115,11 @@ fn request_path<B>(req: &Request<B>) -> &str {
 }
 
 #[derive(Debug, Clone)]
-pub struct MetricApp {
+pub struct MetricsHandler {
     pub metrics: Arc<Mutex<Metrics>>,
 }
 
-impl Service<Request<IncomingBody>> for MetricApp {
+impl Service<Request<IncomingBody>> for MetricsHandler {
     type Response = BodyType;
     type Error = hyper::Error;
     type Future = ServiceFuture;
