@@ -82,54 +82,88 @@ impl Metrics {
     pub fn to_prometheus(&mut self) -> String {
         let mut output_buffer = std::mem::take(&mut self.output_buffer);
         output_buffer.clear();
-        for (key, inner) in &self.request_counter {
-            append_metric_output(
+        if !self.request_counter.is_empty() {
+            append_metric_label(
                 &mut output_buffer,
-                &key.name,
-                &key.labels,
-                MetricValue::AtomicInt(inner),
+                "requests",
                 "counter",
                 "Number of requests",
             );
         }
-        for (key, inner) in &self.classification_spam_counter {
-            append_metric_output(
+        for (key, inner) in &self.request_counter {
+            append_metric_value(
                 &mut output_buffer,
-                &key.name,
+                "requests",
                 &key.labels,
                 MetricValue::AtomicInt(inner),
+            );
+        }
+
+        if !self.classification_spam_counter.is_empty() {
+            append_metric_label(
+                &mut output_buffer,
+                "classifications_spam",
                 "counter",
                 "Number of spam classifications",
             );
         }
-        for (key, inner) in &self.classification_valid_counter {
-            append_metric_output(
+        for (key, inner) in &self.classification_spam_counter {
+            append_metric_value(
                 &mut output_buffer,
-                &key.name,
+                "classifications_spam",
                 &key.labels,
                 MetricValue::AtomicInt(inner),
+            );
+        }
+
+        if !self.classification_valid_counter.is_empty() {
+            append_metric_label(
+                &mut output_buffer,
+                "classifications_valid",
                 "counter",
                 "Number of valid classifications",
             );
         }
-        for (key, inner) in &self.asn_known_counter {
-            append_metric_output(
+        for (key, inner) in &self.classification_valid_counter {
+            append_metric_value(
                 &mut output_buffer,
-                &key.name,
+                "classifications_valid",
                 &key.labels,
                 MetricValue::AtomicInt(inner),
+            );
+        }
+
+        if !self.asn_known_counter.is_empty() {
+            append_metric_label(
+                &mut output_buffer,
+                "asns_known",
                 "counter",
                 "ASNs whence originate spam",
             );
         }
-        for (key, inner) in &self.asn_hidden_counter {
-            append_metric_output(
+        for (key, inner) in &self.asn_known_counter {
+            append_metric_value(
                 &mut output_buffer,
-                &key.name,
+                "asns_known",
                 &key.labels,
                 MetricValue::AtomicInt(inner),
+            );
+        }
+
+        if !self.asn_hidden_counter.is_empty() {
+            append_metric_label(
+                &mut output_buffer,
+                "asns_hidden",
                 "counter",
                 "ASNs hiding spam",
+            );
+        }
+        for (key, inner) in &self.asn_hidden_counter {
+            append_metric_value(
+                &mut output_buffer,
+                "asns_hidden",
+                &key.labels,
+                MetricValue::AtomicInt(inner),
             );
         }
 
@@ -148,11 +182,9 @@ enum MetricValue<'a> {
     Float(f64),
 }
 
-fn append_metric_output(
+fn append_metric_label(
     output_buffer: &mut String,
     key: &str,
-    labels: &[MetricLabel],
-    value: MetricValue,
     kind: &'static str,
     desc: &'static str,
 ) {
@@ -167,7 +199,14 @@ fn append_metric_output(
     output_buffer.push(' ');
     output_buffer.push_str(kind);
     output_buffer.push('\n');
+}
 
+fn append_metric_value(
+    output_buffer: &mut String,
+    key: &str,
+    labels: &[MetricLabel],
+    value: MetricValue,
+) {
     output_buffer.push_str(key);
     if !labels.is_empty() {
         output_buffer.push('{');
@@ -298,41 +337,63 @@ static CLK_TICK: LazyLock<f64> =
 fn append_procfs_metrics(output_buffer: &mut String) {
     if let Ok(p) = procfs::process::Process::myself() {
         if let Ok(stat) = p.stat() {
-            append_metric_output(
+            append_metric_label(
+                output_buffer,
+                "threads",
+                "gauge",
+                "Number of OS threads in the process",
+            );
+            append_metric_value(
                 output_buffer,
                 "threads",
                 &[],
                 MetricValue::Int(stat.num_threads as i64),
-                "gauge",
-                "Number of OS threads in the process",
             );
-            append_metric_output(
+            append_metric_label(
+                output_buffer,
+                "vss_bytes",
+                "gauge",
+                "Virtual memory size in bytes",
+            );
+            append_metric_value(
                 output_buffer,
                 "vss_bytes",
                 &[],
                 MetricValue::Int(stat.vsize as i64),
-                "gauge",
-                "Virtual memory size in bytes",
             );
-            append_metric_output(
+            append_metric_label(
+                output_buffer,
+                "rss_bytes",
+                "gauge",
+                "Resident memory size in bytes",
+            );
+            append_metric_value(
                 output_buffer,
                 "rss_bytes",
                 &[],
                 MetricValue::Int(stat.rss as i64 * *PAGE_SIZE),
-                "gauge",
-                "Resident memory size in bytes",
             );
-            append_metric_output(
+            append_metric_label(
+                output_buffer,
+                "cpu_time_seconds",
+                "gauge",
+                "Total user and system CPU time in seconds",
+            );
+            append_metric_value(
                 output_buffer,
                 "cpu_time_seconds",
                 &[],
                 MetricValue::Float((stat.utime + stat.stime) as f64 / *CLK_TICK),
-                "gauge",
-                "Total user and system CPU time in seconds",
             );
         }
-        if let Ok(fd_count) = p.fd_count() {
-            append_metric_output(
+        if let Ok((fd_count, limits)) = p.fd_count().zip(p.limits()) {
+            append_metric_label(
+                output_buffer,
+                "fds",
+                "gauge",
+                "Number of open file descriptors",
+            );
+            append_metric_value(
                 output_buffer,
                 "fds",
                 &[MetricLabel(
@@ -340,13 +401,9 @@ fn append_procfs_metrics(output_buffer: &mut String) {
                     CompactString::const_new("open"),
                 )],
                 MetricValue::Int(fd_count as i64),
-                "gauge",
-                "Number of open file descriptors",
             );
-        }
-        if let Ok(limits) = p.limits() {
             if let procfs::process::LimitValue::Value(max) = limits.max_open_files.soft_limit {
-                append_metric_output(
+                append_metric_value(
                     output_buffer,
                     "fds",
                     &[MetricLabel(
@@ -354,8 +411,6 @@ fn append_procfs_metrics(output_buffer: &mut String) {
                         CompactString::const_new("max"),
                     )],
                     MetricValue::Int(max as i64),
-                    "gauge",
-                    "Number of open file descriptors",
                 );
             }
         }
