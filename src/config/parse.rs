@@ -25,19 +25,19 @@ fn parse_doc(doc: KdlDocument) -> Result<Config, ParseError> {
     for node in doc.nodes() {
         match node.name().value() {
             "server" => {
-                config.server = node.parse_server()?;
+                config.server = parse_server(node)?;
             }
             "classifier" => {
-                config.classifier = node.parse_classifier()?;
+                config.classifier = parse_classifier(node)?;
             }
             "garbage" => {
-                config.garbage = node.parse_garbage()?;
+                config.garbage = parse_garbage(node)?;
             }
             "logging" => {
-                config.logging = node.parse_logging()?;
+                config.logging = parse_logging(node)?;
             }
             "metrics" => {
-                config.metrics = Some(node.parse_metrics()?);
+                config.metrics = Some(parse_metrics(node)?);
             }
             _ => {}
         }
@@ -46,19 +46,226 @@ fn parse_doc(doc: KdlDocument) -> Result<Config, ParseError> {
     Ok(config)
 }
 
+fn parse_server(node: &KdlNode) -> Result<Server, ParseError> {
+    let mut server = Server::default();
+
+    let mode_entry = node.one_string_entry()?;
+    match mode_entry.as_ref() {
+        "proxy" => server.mode = ServerMode::Proxy,
+        "preflight" => server.mode = ServerMode::Preflight,
+        _ => {
+            return Err(ParseError::from_entry(
+                &mode_entry,
+                "unsupported server mode".into(),
+            ));
+        }
+    }
+
+    for child in node.iter_children() {
+        match child.name().value() {
+            "listen" => {
+                let entry = child.one_string_entry()?;
+                server.listen = entry
+                    .as_ref()
+                    .parse()
+                    .map_err(|_| ParseError::from_entry(&entry, "invalid socket address".into()))?;
+            }
+            "status-codes" => {
+                if let Some((entry, status)) = child.int_prop_with_entry::<u16>("valid")? {
+                    server.status_code_valid = StatusCode::from_u16(status).map_err(|_| {
+                        ParseError::from_entry(entry, "invalid HTTP status code".into())
+                    })?;
+                }
+                if let Some((entry, status)) = child.int_prop_with_entry::<u16>("spam")? {
+                    server.status_code_spam = StatusCode::from_u16(status).map_err(|_| {
+                        ParseError::from_entry(entry, "invalid HTTP status code".into())
+                    })?;
+                }
+            }
+            _ => {}
+        }
+    }
+
+    Ok(server)
+}
+
+fn parse_classifier(node: &KdlNode) -> Result<Classifier, ParseError> {
+    let mut classifier = Classifier::default();
+
+    for child in node.iter_children() {
+        match child.name().value() {
+            "trusted-decision-header" => {
+                classifier.trusted_decision_header = Some(child.one_string_arg()?);
+            }
+            "user-agents" => {
+                for child in child.iter_children() {
+                    match child.name().value() {
+                        "robots-json-path" => {
+                            classifier.robots_json_path = Some(child.one_string_arg()?)
+                        }
+                        "unwanted" => classifier.unwanted_agents = child.string_seq()?,
+                        "trusted" => classifier.trusted_agents = child.string_seq()?,
+                        _ => {}
+                    }
+                }
+            }
+            "trusted-paths" => {
+                classifier.trusted_paths = child.string_seq()?;
+            }
+            "asns" => {
+                for child in child.iter_children() {
+                    match child.name().value() {
+                        "database" => classifier.asns_db_path = Some(child.one_string_arg()?),
+                        "unwanted" => classifier.unwanted_asns = child.int_seq()?,
+                        _ => {}
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+
+    Ok(classifier)
+}
+
+fn parse_garbage(node: &KdlNode) -> Result<Garbage, ParseError> {
+    let mut garbage = Garbage::default();
+
+    for child in node.iter_children() {
+        match child.name().value() {
+            "corpus-files" => {
+                garbage.source_files = child.string_seq()?;
+            }
+            "words-file" => {
+                garbage.words_file = Some(child.one_string_arg()?);
+            }
+            "template-file" => {
+                garbage.template_file = Some(child.one_string_arg()?);
+            }
+            "poisons" => {
+                garbage.poisons = child.string_seq()?;
+            }
+            "paragraphs" => {
+                if let Some(n) = child.int_prop::<usize>("min")? {
+                    garbage.paragraphs.min_count = n;
+                }
+                if let Some(n) = child.int_prop::<usize>("max")? {
+                    garbage.paragraphs.max_count = n;
+                }
+                for child in child.iter_children() {
+                    match child.name().value() {
+                        "words" => {
+                            if let Some(n) = child.int_prop::<usize>("min")? {
+                                garbage.paragraphs.min_words = n;
+                            }
+                            if let Some(n) = child.int_prop::<usize>("max")? {
+                                garbage.paragraphs.max_words = n;
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+            }
+            "links" => {
+                garbage.links = parse_garbage_links(child)?;
+            }
+            _ => {}
+        }
+    }
+
+    Ok(garbage)
+}
+
+fn parse_garbage_links(node: &KdlNode) -> Result<Links, ParseError> {
+    let mut links = Links::default();
+
+    if let Some(n) = node.int_prop::<usize>("min")? {
+        links.min_count = n;
+    }
+    if let Some(n) = node.int_prop::<usize>("max")? {
+        links.max_count = n;
+    }
+    for child in node.iter_children() {
+        match child.name().value() {
+            "words" => {
+                if let Some(n) = child.int_prop::<usize>("min")? {
+                    links.min_words = n;
+                }
+                if let Some(n) = child.int_prop::<usize>("max")? {
+                    links.max_words = n;
+                }
+            }
+            "separator" => {
+                links.separator = child.one_string_arg()?.chars().nth(0).unwrap();
+            }
+            "trailing-slash" => links.trailing_slash = child.one_booleanish_entry()?,
+            _ => {}
+        }
+    }
+
+    Ok(links)
+}
+
+fn parse_logging(node: &KdlNode) -> Result<Logging, ParseError> {
+    let mut logging = Logging::default();
+
+    for child in node.iter_children() {
+        match child.name().value() {
+            "level" => {
+                let entry = child.one_string_entry()?;
+                logging.level = match LevelFilter::from_str(entry.as_ref()) {
+                    Ok(level) => level,
+                    Err(_) => {
+                        return Err(ParseError::from_entry(&entry, "invalid log level".into()));
+                    }
+                };
+            }
+            "target" => {
+                let entry = child.one_string_entry()?;
+                logging.target = match entry.as_ref() {
+                    "stdout" => LogTarget::Stdout,
+                    "stderr" => LogTarget::Stderr,
+                    _ => {
+                        return Err(ParseError::from_entry(&entry, "invalid log target".into()));
+                    }
+                };
+            }
+            "color" => {
+                logging.color = child.one_booleanish_entry()?;
+            }
+            "request-handler" => {
+                logging.request_handler = child.one_booleanish_entry()?;
+            }
+            _ => {}
+        }
+    }
+
+    Ok(logging)
+}
+
+fn parse_metrics(node: &KdlNode) -> Result<Metrics, ParseError> {
+    let mut metrics = Metrics::default();
+
+    for child in node.iter_children() {
+        match child.name().value() {
+            "listen" => {
+                let entry = child.one_string_entry()?;
+                metrics.listen = entry
+                    .as_ref()
+                    .parse()
+                    .map_err(|_| ParseError::from_entry(&entry, "invalid socket address".into()))?;
+            }
+            "persist-path" => {
+                metrics.persist_path = Some(child.one_string_arg()?);
+            }
+            _ => {}
+        }
+    }
+
+    Ok(metrics)
+}
+
 trait Parseable {
-    fn parse_server(&self) -> Result<Server, ParseError>;
-
-    fn parse_classifier(&self) -> Result<Classifier, ParseError>;
-
-    fn parse_garbage(&self) -> Result<Garbage, ParseError>;
-
-    fn parse_garbage_links(&self) -> Result<Links, ParseError>;
-
-    fn parse_logging(&self) -> Result<Logging, ParseError>;
-
-    fn parse_metrics(&self) -> Result<Metrics, ParseError>;
-
     fn one_booleanish_entry(&self) -> Result<bool, ParseError>;
 
     fn one_string_entry<'a>(&'a self) -> Result<StringEntry<'a>, ParseError>;
@@ -94,226 +301,6 @@ impl<'a> AsRef<str> for StringEntry<'a> {
 }
 
 impl Parseable for KdlNode {
-    fn parse_server(&self) -> Result<Server, ParseError> {
-        let mut server = Server::default();
-
-        let mode_entry = self.one_string_entry()?;
-        match mode_entry.as_ref() {
-            "proxy" => server.mode = ServerMode::Proxy,
-            "preflight" => server.mode = ServerMode::Preflight,
-            _ => {
-                return Err(ParseError::from_entry(
-                    &mode_entry,
-                    "unsupported server mode".into(),
-                ));
-            }
-        }
-
-        for child in self.iter_children() {
-            match child.name().value() {
-                "listen" => {
-                    let entry = child.one_string_entry()?;
-                    server.listen = entry.as_ref().parse().map_err(|_| {
-                        ParseError::from_entry(&entry, "invalid socket address".into())
-                    })?;
-                }
-                "status-codes" => {
-                    if let Some((entry, status)) = child.int_prop_with_entry::<u16>("valid")? {
-                        server.status_code_valid = StatusCode::from_u16(status).map_err(|_| {
-                            ParseError::from_entry(entry, "invalid HTTP status code".into())
-                        })?;
-                    }
-                    if let Some((entry, status)) = child.int_prop_with_entry::<u16>("spam")? {
-                        server.status_code_spam = StatusCode::from_u16(status).map_err(|_| {
-                            ParseError::from_entry(entry, "invalid HTTP status code".into())
-                        })?;
-                    }
-                }
-                _ => {}
-            }
-        }
-
-        Ok(server)
-    }
-
-    fn parse_classifier(&self) -> Result<Classifier, ParseError> {
-        let mut classifier = Classifier::default();
-
-        for child in self.iter_children() {
-            match child.name().value() {
-                "trusted-decision-header" => {
-                    classifier.trusted_decision_header = Some(child.one_string_arg()?);
-                }
-                "user-agents" => {
-                    for child in child.iter_children() {
-                        match child.name().value() {
-                            "robots-json-path" => {
-                                classifier.robots_json_path = Some(child.one_string_arg()?)
-                            }
-                            "unwanted" => classifier.unwanted_agents = child.string_seq()?,
-                            "trusted" => classifier.trusted_agents = child.string_seq()?,
-                            _ => {}
-                        }
-                    }
-                }
-                "trusted-paths" => {
-                    classifier.trusted_paths = child.string_seq()?;
-                }
-                "asns" => {
-                    for child in child.iter_children() {
-                        match child.name().value() {
-                            "database" => classifier.asns_db_path = Some(child.one_string_arg()?),
-                            "unwanted" => classifier.unwanted_asns = child.int_seq()?,
-                            _ => {}
-                        }
-                    }
-                }
-                _ => {}
-            }
-        }
-
-        Ok(classifier)
-    }
-
-    fn parse_garbage(&self) -> Result<Garbage, ParseError> {
-        let mut garbage = Garbage::default();
-
-        for child in self.iter_children() {
-            match child.name().value() {
-                "corpus-files" => {
-                    garbage.source_files = child.string_seq()?;
-                }
-                "words-file" => {
-                    garbage.words_file = Some(child.one_string_arg()?);
-                }
-                "template-file" => {
-                    garbage.template_file = Some(child.one_string_arg()?);
-                }
-                "poisons" => {
-                    garbage.poisons = child.string_seq()?;
-                }
-                "paragraphs" => {
-                    if let Some(n) = child.int_prop::<usize>("min")? {
-                        garbage.paragraphs.min_count = n;
-                    }
-                    if let Some(n) = child.int_prop::<usize>("max")? {
-                        garbage.paragraphs.max_count = n;
-                    }
-                    for child in child.iter_children() {
-                        match child.name().value() {
-                            "words" => {
-                                if let Some(n) = child.int_prop::<usize>("min")? {
-                                    garbage.paragraphs.min_words = n;
-                                }
-                                if let Some(n) = child.int_prop::<usize>("max")? {
-                                    garbage.paragraphs.max_words = n;
-                                }
-                            }
-                            _ => {}
-                        }
-                    }
-                }
-                "links" => {
-                    garbage.links = child.parse_garbage_links()?;
-                }
-                _ => {}
-            }
-        }
-
-        Ok(garbage)
-    }
-
-    fn parse_garbage_links(&self) -> Result<Links, ParseError> {
-        let mut links = Links::default();
-
-        if let Some(n) = self.int_prop::<usize>("min")? {
-            links.min_count = n;
-        }
-        if let Some(n) = self.int_prop::<usize>("max")? {
-            links.max_count = n;
-        }
-        for child in self.iter_children() {
-            match child.name().value() {
-                "words" => {
-                    if let Some(n) = child.int_prop::<usize>("min")? {
-                        links.min_words = n;
-                    }
-                    if let Some(n) = child.int_prop::<usize>("max")? {
-                        links.max_words = n;
-                    }
-                }
-                "separator" => {
-                    links.separator = child.one_string_arg()?.chars().nth(0).unwrap();
-                }
-                "trailing-slash" => links.trailing_slash = child.one_booleanish_entry()?,
-                _ => {}
-            }
-        }
-
-        Ok(links)
-    }
-
-    fn parse_logging(&self) -> Result<Logging, ParseError> {
-        let mut logging = Logging::default();
-
-        for child in self.iter_children() {
-            match child.name().value() {
-                "level" => {
-                    let entry = child.one_string_entry()?;
-                    logging.level = match LevelFilter::from_str(entry.as_ref()) {
-                        Ok(level) => level,
-                        Err(_) => {
-                            return Err(ParseError::from_entry(&entry, "invalid log level".into()));
-                        }
-                    };
-                }
-                "target" => {
-                    let entry = child.one_string_entry()?;
-                    logging.target = match entry.as_ref() {
-                        "stdout" => LogTarget::Stdout,
-                        "stderr" => LogTarget::Stderr,
-                        _ => {
-                            return Err(ParseError::from_entry(
-                                &entry,
-                                "invalid log target".into(),
-                            ));
-                        }
-                    };
-                }
-                "color" => {
-                    logging.color = child.one_booleanish_entry()?;
-                }
-                "request-handler" => {
-                    logging.request_handler = child.one_booleanish_entry()?;
-                }
-                _ => {}
-            }
-        }
-
-        Ok(logging)
-    }
-
-    fn parse_metrics(&self) -> Result<Metrics, ParseError> {
-        let mut metrics = Metrics::default();
-
-        for child in self.iter_children() {
-            match child.name().value() {
-                "listen" => {
-                    let entry = child.one_string_entry()?;
-                    metrics.listen = entry.as_ref().parse().map_err(|_| {
-                        ParseError::from_entry(&entry, "invalid socket address".into())
-                    })?;
-                }
-                "persist-path" => {
-                    metrics.persist_path = Some(child.one_string_arg()?);
-                }
-                _ => {}
-            }
-        }
-
-        Ok(metrics)
-    }
-
     fn one_booleanish_entry(&self) -> Result<bool, ParseError> {
         let entry = self
             .entry(0)
