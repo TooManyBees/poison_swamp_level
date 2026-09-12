@@ -33,11 +33,16 @@ async fn main() {
     init_logger(&config);
 
     let mut app_config = AppConfig::from_config(config).unwrap();
-    let mut listener = app_config.listen().await.unwrap();
-    let metrics_listener =
-        TcpListener::bind(SocketAddr::new("127.0.0.1".parse().unwrap(), 4242))
-            .await
-            .unwrap();
+    #[allow(unused_mut)]
+    let mut listener = app_config
+        .listen()
+        .await
+        .unwrap_or_else(|_| std::process::exit(1));
+    #[allow(unused_mut)]
+    let mut metrics_listener = app_config
+        .listen_metrics()
+        .await
+        .unwrap_or_else(|_| std::process::exit(1));
 
     #[cfg(unix)]
     let mut sighup = signal(SignalKind::hangup()).unwrap();
@@ -63,14 +68,32 @@ async fn main() {
                 handle_metrics(&app_config, metrics_listen_result);
             },
             Some(new_app_config) = config_reload.recv() => {
+                let mut new_listener = None;
                 if app_config.listen_addr() != new_app_config.listen_addr() {
                     match new_app_config.listen().await {
-                        Ok(new_listener) => listener = new_listener,
+                        Ok(l) => new_listener = Some(l),
                         Err(e) => {
                             log::error!("Config reload encountered error: {e}");
                             continue;
                         }
                     }
+                }
+                let mut new_metrics_listener = None;
+                if app_config.listen_metrics_addr() != new_app_config.listen_metrics_addr() {
+                    match new_app_config.listen_metrics().await {
+                        Ok(l) => new_metrics_listener = Some(l),
+                        Err(e) => {
+                            log::error!("Config reload encountered error: {e}");
+                            continue;
+                        }
+                    }
+                }
+
+                if let Some(l) = new_listener {
+                    listener = l;
+                }
+                if let Some(l) = new_metrics_listener {
+                    metrics_listener = l;
                 }
                 app_config = new_app_config;
 
@@ -134,14 +157,38 @@ impl AppConfig {
         self.config.server.listen
     }
 
+    fn listen_metrics_addr(&self) -> SocketAddr {
+        self.config.metrics.listen
+    }
+
     fn same_as(&self, other: &Config) -> bool {
         self.config == *other
     }
 
     async fn listen(&self) -> io::Result<TcpListener> {
-        let listener = TcpListener::bind(self.listen_addr()).await?;
-        log::info!("Listening on {}", self.listen_addr());
-        Ok(listener)
+        match TcpListener::bind(self.listen_addr()).await {
+            Ok(l) => {
+                log::info!("Listening on {}", self.listen_addr());
+                Ok(l)
+            }
+            Err(e) => {
+                log::error!("Could not listen on {}: {}", self.listen_addr(), e);
+                Err(e)
+            }
+        }
+    }
+
+    async fn listen_metrics(&self) -> io::Result<TcpListener> {
+        match TcpListener::bind(self.listen_metrics_addr()).await {
+            Ok(l) => {
+                log::info!("Metrics listening on {}", self.listen_metrics_addr());
+                Ok(l)
+            }
+            Err(e) => {
+                log::error!("Could not listen on {}: {}", self.listen_metrics_addr(), e);
+                Err(e)
+            }
+        }
     }
 }
 

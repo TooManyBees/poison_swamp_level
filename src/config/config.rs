@@ -10,6 +10,7 @@ pub struct Config {
     pub garbage: Garbage,
     pub server: Server,
     pub logging: Logging,
+    pub metrics: Metrics,
 }
 
 impl Config {
@@ -150,4 +151,17 @@ impl Default for Logging {
 pub enum LogTarget {
     Stdout,
     Stderr,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub struct Metrics {
+    pub listen: SocketAddr,
+}
+
+impl Default for Metrics {
+    fn default() -> Metrics {
+        Metrics {
+            listen: SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::new(127, 0, 0, 1), 4001)),
+        }
+    }
 }

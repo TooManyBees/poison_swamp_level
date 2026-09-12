@@ -1,4 +1,6 @@
-use super::config::{Classifier, Config, Garbage, Links, LogTarget, Logging, Server, ServerMode};
+use super::config::{
+    Classifier, Config, Garbage, Links, LogTarget, Logging, Metrics, Server, ServerMode,
+};
 use http::status::StatusCode;
 use kdl::{KdlDocument, KdlEntry, KdlError, KdlNode};
 use log::LevelFilter;
@@ -34,6 +36,9 @@ fn parse_doc(doc: KdlDocument) -> Result<Config, ParseError> {
             "logging" => {
                 config.logging = node.parse_logging()?;
             }
+            "metrics" => {
+                config.metrics = node.parse_metrics()?;
+            }
             _ => {}
         }
     }
@@ -51,6 +56,8 @@ trait Parseable {
     fn parse_garbage_links(&self) -> Result<Links, ParseError>;
 
     fn parse_logging(&self) -> Result<Logging, ParseError>;
+
+    fn parse_metrics(&self) -> Result<Metrics, ParseError>;
 
     fn one_booleanish_entry(&self) -> Result<bool, ParseError>;
 
@@ -284,6 +291,24 @@ impl Parseable for KdlNode {
         }
 
         Ok(logging)
+    }
+
+    fn parse_metrics(&self) -> Result<Metrics, ParseError> {
+        let mut metrics = Metrics::default();
+
+        for child in self.iter_children() {
+            match child.name().value() {
+                "listen" => {
+                    let entry = child.one_string_entry()?;
+                    metrics.listen = entry.as_ref().parse().map_err(|_| {
+                        ParseError::from_entry(&entry, "invalid socket address".into())
+                    })?;
+                }
+                _ => {}
+            }
+        }
+
+        Ok(metrics)
     }
 
     fn one_booleanish_entry(&self) -> Result<bool, ParseError> {
