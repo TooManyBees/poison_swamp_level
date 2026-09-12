@@ -13,6 +13,7 @@ use std::{
     fs::File,
     io::{self, ErrorKind},
     mem::take,
+    path::Path,
 };
 
 #[derive(Debug, Default)]
@@ -493,8 +494,12 @@ fn write_persisted_metrics(path: &str, metrics: &mut Metrics) -> Result<(), Pers
     metrics_into_persisted(&mut persisted, take(&mut metrics.asn_known_counter));
     metrics_into_persisted(&mut persisted, take(&mut metrics.asn_hidden_counter));
 
-    let f = File::create(path).map_err(PersistenceError::Io)?;
-    serde_json::to_writer_pretty(f, &persisted).map_err(PersistenceError::Json)?;
+    let parent_dir = Path::new(path).parent().unwrap_or(Path::new("."));
+    let file = tempfile::NamedTempFile::new_in(parent_dir).map_err(PersistenceError::Io)?;
+    serde_json::to_writer(&file, &persisted).map_err(PersistenceError::Json)?;
+    file.into_temp_path()
+        .persist(path)
+        .map_err(|e| PersistenceError::Io(e.error))?;
 
     Ok(())
 }
