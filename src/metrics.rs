@@ -2,15 +2,17 @@ use crate::classifier::{Classification, Decision, SpamReason, ValidReason};
 use crate::config::Config;
 use compact_str::{CompactString, ToCompactString};
 use std::collections::HashMap;
-use std::fmt::{self, Write};
-use std::fs::File;
-use std::io::{self, ErrorKind};
-use std::mem::take;
 #[cfg(target_os = "linux")]
 use std::sync::LazyLock;
 use std::sync::{
     Arc, Mutex,
     atomic::{AtomicU64, Ordering},
+};
+use std::{
+    fmt::{self, Write},
+    fs::File,
+    io::{self, ErrorKind},
+    mem::take,
 };
 
 #[derive(Debug, Default)]
