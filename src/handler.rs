@@ -65,6 +65,7 @@ impl Service<Request<IncomingBody>> for App {
                 classification.decision,
             );
         }
+        // TODO: don't do this if metrics are disabled
         record_request(&self.metrics, classification);
         Box::pin(async { Ok(resp) })
     }

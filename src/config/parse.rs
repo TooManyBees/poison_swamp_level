@@ -37,7 +37,7 @@ fn parse_doc(doc: KdlDocument) -> Result<Config, ParseError> {
                 config.logging = node.parse_logging()?;
             }
             "metrics" => {
-                config.metrics = node.parse_metrics()?;
+                config.metrics = Some(node.parse_metrics()?);
             }
             _ => {}
         }

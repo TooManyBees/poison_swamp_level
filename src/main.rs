@@ -5,9 +5,12 @@ use poison_swamp_level::{Classifier, Config, Garbage, ServerMode, init_logger};
 use poison_swamp_level::{metrics, metrics::Metrics};
 use std::{
     error::Error,
+    future::Future,
     io::{self, IsTerminal},
     net::{IpAddr, SocketAddr},
+    pin::Pin,
     sync::{Arc, Mutex},
+    task::{Context, Poll},
 };
 use tokio::net::{TcpListener, TcpStream};
 #[cfg(unix)]
@@ -157,8 +160,8 @@ impl AppConfig {
         self.config.server.listen
     }
 
-    fn listen_metrics_addr(&self) -> SocketAddr {
-        self.config.metrics.listen
+    fn listen_metrics_addr(&self) -> Option<SocketAddr> {
+        self.config.metrics.as_ref().map(|metrics| metrics.listen)
     }
 
     fn same_as(&self, other: &Config) -> bool {
@@ -178,14 +181,19 @@ impl AppConfig {
         }
     }
 
-    async fn listen_metrics(&self) -> io::Result<TcpListener> {
-        match TcpListener::bind(self.listen_metrics_addr()).await {
+    async fn listen_metrics(&self) -> io::Result<OptionalListener> {
+        let addr = match self.listen_metrics_addr() {
+            None => return Ok(OptionalListener::None),
+            Some(addr) => addr,
+        };
+
+        match TcpListener::bind(addr).await {
             Ok(l) => {
-                log::info!("Metrics listening on {}", self.listen_metrics_addr());
-                Ok(l)
+                log::info!("Metrics listening on {}", addr);
+                Ok(OptionalListener::Some(l))
             }
             Err(e) => {
-                log::error!("Could not listen on {}: {}", self.listen_metrics_addr(), e);
+                log::error!("Could not listen on {}: {}", addr, e);
                 Err(e)
             }
         }
@@ -243,4 +251,34 @@ fn reload_config(existing: &AppConfig, tx: Sender<AppConfig>) {
             log::error!("Config reload encountered error: {e}");
         }),
     });
+}
+
+enum OptionalListener {
+    None,
+    Some(TcpListener),
+}
+
+enum TcpListenerFuture<'l> {
+    None,
+    Some(&'l TcpListener),
+}
+
+impl OptionalListener {
+    fn accept<'l>(&'l self) -> TcpListenerFuture<'l> {
+        match self {
+            OptionalListener::None => TcpListenerFuture::None,
+            OptionalListener::Some(listener) => TcpListenerFuture::Some(&listener),
+        }
+    }
+}
+
+impl<'l> Future for TcpListenerFuture<'l> {
+    type Output = io::Result<(TcpStream, SocketAddr)>;
+
+    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        match *self {
+            TcpListenerFuture::None => Poll::Pending,
+            TcpListenerFuture::Some(f) => f.poll_accept(cx),
+        }
+    }
 }

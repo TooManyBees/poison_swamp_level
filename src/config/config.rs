@@ -10,7 +10,7 @@ pub struct Config {
     pub garbage: Garbage,
     pub server: Server,
     pub logging: Logging,
-    pub metrics: Metrics,
+    pub metrics: Option<Metrics>,
 }
 
 impl Config {
