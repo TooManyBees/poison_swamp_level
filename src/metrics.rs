@@ -5,6 +5,7 @@ use std::collections::HashMap;
 use std::fmt::{self, Write};
 use std::fs::File;
 use std::io::{self, ErrorKind};
+use std::mem::take;
 #[cfg(target_os = "linux")]
 use std::sync::LazyLock;
 use std::sync::{
@@ -114,7 +115,7 @@ impl Metrics {
     }
 
     pub fn to_prometheus(&mut self) -> String {
-        let mut output_buffer = std::mem::take(&mut self.output_buffer);
+        let mut output_buffer = take(&mut self.output_buffer);
         output_buffer.clear();
 
         append_metric(&mut output_buffer, &self.request_counter);
@@ -478,23 +479,17 @@ fn extract_persisted_metric(map: &mut NamedHashMap, persisted: &mut PersistedMet
 fn write_persisted_metrics(path: &str, metrics: &mut Metrics) -> Result<(), PersistenceError> {
     let mut persisted: PersistedMetrics = HashMap::new();
 
-    metrics_into_persisted(&mut persisted, std::mem::take(&mut metrics.request_counter));
+    metrics_into_persisted(&mut persisted, take(&mut metrics.request_counter));
     metrics_into_persisted(
         &mut persisted,
-        std::mem::take(&mut metrics.classification_spam_counter),
+        take(&mut metrics.classification_spam_counter),
     );
     metrics_into_persisted(
         &mut persisted,
-        std::mem::take(&mut metrics.classification_valid_counter),
+        take(&mut metrics.classification_valid_counter),
     );
-    metrics_into_persisted(
-        &mut persisted,
-        std::mem::take(&mut metrics.asn_known_counter),
-    );
-    metrics_into_persisted(
-        &mut persisted,
-        std::mem::take(&mut metrics.asn_hidden_counter),
-    );
+    metrics_into_persisted(&mut persisted, take(&mut metrics.asn_known_counter));
+    metrics_into_persisted(&mut persisted, take(&mut metrics.asn_hidden_counter));
 
     let f = File::create(path).map_err(PersistenceError::Io)?;
     serde_json::to_writer_pretty(f, &persisted).map_err(PersistenceError::Json)?;
