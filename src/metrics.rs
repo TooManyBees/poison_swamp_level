@@ -18,15 +18,18 @@ pub struct Metrics {
 }
 
 impl Metrics {
-    pub fn request_counter(&mut self, labels: Vec<MetricLabel>) -> &AtomicU64 {
+    pub fn increment_request(&mut self, labels: Vec<MetricLabel>) {
         let key = MetricKey {
             name: "requests",
             labels,
         };
-        self.request_counter.entry(key).or_insert(AtomicU64::new(0))
+        self.request_counter
+            .entry(key)
+            .or_insert(AtomicU64::new(0))
+            .fetch_add(1, Ordering::Release);
     }
 
-    pub fn classification_spam_counter(&mut self, labels: Vec<MetricLabel>) -> &AtomicU64 {
+    pub fn increment_classification_spam(&mut self, labels: Vec<MetricLabel>) {
         let key = MetricKey {
             name: "classifications.spam",
             labels,
@@ -34,9 +37,10 @@ impl Metrics {
         self.classification_spam_counter
             .entry(key)
             .or_insert(AtomicU64::new(0))
+            .fetch_add(1, Ordering::Release);
     }
 
-    pub fn classification_valid_counter(&mut self, labels: Vec<MetricLabel>) -> &AtomicU64 {
+    pub fn increment_classification_valid(&mut self, labels: Vec<MetricLabel>) {
         let key = MetricKey {
             name: "classifications.valid",
             labels,
@@ -44,15 +48,19 @@ impl Metrics {
         self.classification_valid_counter
             .entry(key)
             .or_insert(AtomicU64::new(0))
+            .fetch_add(1, Ordering::Release);
     }
 
-    pub fn asn_counter(&mut self, asn: u32) -> &AtomicU64 {
+    pub fn increment_asn(&mut self, asn: u32) {
         let label = MetricLabel("asn", asn.to_string());
         let key = MetricKey {
             name: "asns",
             labels: vec![label],
         };
-        self.asn_counter.entry(key).or_insert(AtomicU64::new(0))
+        self.asn_counter
+            .entry(key)
+            .or_insert(AtomicU64::new(0))
+            .fetch_add(1, Ordering::Release);
     }
 
     pub fn to_prometheus(&mut self) -> String {
@@ -159,9 +167,7 @@ pub fn record_request(metrics: &Mutex<Metrics>, c: Classification) {
         labels.push(MetricLabel("host", host.to_string()));
     }
     let mut metrics = metrics.lock().unwrap();
-    metrics
-        .request_counter(labels.clone())
-        .fetch_add(1, Ordering::Release);
+    metrics.increment_request(labels.clone());
     match c.decision {
         Decision::Valid(reason) => {
             match reason {
@@ -177,9 +183,7 @@ pub fn record_request(metrics: &Mutex<Metrics>, c: Classification) {
                 }
                 ValidReason::TrustedDecision => {}
             }
-            metrics
-                .classification_valid_counter(labels)
-                .fetch_add(1, Ordering::Release);
+            metrics.increment_classification_valid(labels);
         }
         Decision::Spam(reason) => {
             match reason {
@@ -192,11 +196,9 @@ pub fn record_request(metrics: &Mutex<Metrics>, c: Classification) {
                 }
                 SpamReason::TrustedDecision => {}
             }
-            metrics
-                .classification_spam_counter(labels)
-                .fetch_add(1, Ordering::Release);
+            metrics.increment_classification_spam_counter(labels);
             if let Some(asn) = c.asn {
-                metrics.asn_counter(asn).fetch_add(1, Ordering::Release);
+                metrics.increment_asn(asn);
             }
         }
     }
