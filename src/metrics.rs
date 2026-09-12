@@ -169,37 +169,48 @@ pub fn record_request(metrics: &Mutex<Metrics>, c: Classification) {
     let mut metrics = metrics.lock().unwrap();
     metrics.increment_request(labels.clone());
     match c.decision {
-        Decision::Valid(reason) => {
-            match reason {
-                ValidReason::Default => labels.push(MetricLabel("reason", "default".into())),
-                ValidReason::TrustedIP(_) => {
-                    labels.push(MetricLabel("reason", "trusted ip".into()))
-                }
-                ValidReason::TrustedPath(_) => {
-                    labels.push(MetricLabel("reason", "trusted path".into()))
-                }
-                ValidReason::TrustedAgent(_) => {
-                    labels.push(MetricLabel("reason", "trusted agent".into()))
-                }
-                ValidReason::TrustedDecision => {}
+        Decision::Valid(reason) => match reason {
+            ValidReason::Default => {
+                labels.push(MetricLabel("reason", "default".into()));
+                metrics.increment_classification_valid(labels);
             }
-            metrics.increment_classification_valid(labels);
-        }
-        Decision::Spam(reason) => {
-            match reason {
-                SpamReason::Poison(_) => labels.push(MetricLabel("reason", "poison".into())),
-                SpamReason::UnwantedASN(_) => {
-                    labels.push(MetricLabel("reason", "unwanted ASN".into()))
-                }
-                SpamReason::UnwantedAgent(_) => {
-                    labels.push(MetricLabel("reason", "unwanted agent".into()))
-                }
-                SpamReason::TrustedDecision => {}
+            ValidReason::TrustedIP(_) => {
+                labels.push(MetricLabel("reason", "trusted ip".into()));
+                metrics.increment_classification_valid(labels);
             }
-            metrics.increment_classification_spam_counter(labels);
-            if let Some(asn) = c.asn {
-                metrics.increment_asn(asn);
+            ValidReason::TrustedPath(_) => {
+                labels.push(MetricLabel("reason", "trusted path".into()));
+                metrics.increment_classification_valid(labels);
             }
-        }
+            ValidReason::TrustedAgent(_) => {
+                labels.push(MetricLabel("reason", "trusted agent".into()));
+                metrics.increment_classification_valid(labels);
+            }
+            ValidReason::TrustedDecision => {}
+        },
+        Decision::Spam(reason) => match reason {
+            SpamReason::Poison(_) => {
+                labels.push(MetricLabel("reason", "poison".into()));
+                metrics.increment_classification_spam(labels);
+                if let Some(asn) = c.asn {
+                    metrics.increment_asn(asn);
+                }
+            }
+            SpamReason::UnwantedASN(_) => {
+                labels.push(MetricLabel("reason", "unwanted ASN".into()));
+                metrics.increment_classification_spam(labels);
+                if let Some(asn) = c.asn {
+                    metrics.increment_asn(asn);
+                }
+            }
+            SpamReason::UnwantedAgent(_) => {
+                labels.push(MetricLabel("reason", "unwanted agent".into()));
+                metrics.increment_classification_spam(labels);
+                if let Some(asn) = c.asn {
+                    metrics.increment_asn(asn);
+                }
+            }
+            SpamReason::TrustedDecision => {}
+        },
     }
 }
