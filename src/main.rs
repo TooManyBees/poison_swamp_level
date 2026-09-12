@@ -1,12 +1,13 @@
 use hyper::server::conn::http1;
 use hyper_util::rt::TokioIo;
-use poison_swamp_level::handler::{App, HandlerType, preflight, proxy};
+use poison_swamp_level::handler::{App, HandlerType, MetricApp, preflight, proxy};
 use poison_swamp_level::{Classifier, Config, Garbage, ServerMode, init_logger};
+use poison_swamp_level::{metrics, metrics::Metrics};
 use std::{
     error::Error,
     io::{self, IsTerminal},
     net::{IpAddr, SocketAddr},
-    sync::Arc,
+    sync::{Arc, Mutex},
 };
 use tokio::net::{TcpListener, TcpStream};
 #[cfg(unix)]
@@ -33,6 +34,10 @@ async fn main() {
 
     let mut app_config = AppConfig::from_config(config).unwrap();
     let mut listener = app_config.listen().await.unwrap();
+    let metrics_listener =
+        TcpListener::bind(SocketAddr::new("127.0.0.1".parse().unwrap(), 4242))
+            .await
+            .unwrap();
 
     #[cfg(unix)]
     let mut sighup = signal(SignalKind::hangup()).unwrap();
@@ -41,11 +46,21 @@ async fn main() {
 
     loop {
         #[cfg(not(unix))]
-        handle_connection(&app_config, listener.accept().await);
+        tokio::select! {
+            listen_result = listener.accept() => {
+                handle_connection(&app_config, listen_result);
+            },
+            metrics_listen_result = metrics_listener.accept() => {
+                handle_metrics(&app_config, metrics_listen_result);
+            },
+        }
         #[cfg(unix)]
         tokio::select! {
             listen_result = listener.accept() => {
                 handle_connection(&app_config, listen_result);
+            },
+            metrics_listen_result = metrics_listener.accept() => {
+                handle_metrics(&app_config, metrics_listen_result);
             },
             Some(new_app_config) = config_reload.recv() => {
                 if app_config.listen_addr() != new_app_config.listen_addr() {
@@ -73,12 +88,14 @@ struct AppConfig {
     classifier: Arc<Classifier>,
     garbage: Arc<Garbage>,
     handler: HandlerType,
+    metrics: Arc<Mutex<Metrics>>,
 }
 
 impl AppConfig {
     fn from_config(config: Config) -> Result<Self, Box<dyn Error>> {
         let classifier = Classifier::new(&config)?;
         let garbage = Garbage::new(&config)?;
+        let metrics = metrics::init(&config);
 
         let handler = match config.server.mode {
             ServerMode::Proxy => proxy,
@@ -90,6 +107,7 @@ impl AppConfig {
             classifier: Arc::new(classifier),
             garbage: Arc::new(garbage),
             handler,
+            metrics,
         })
     }
 
@@ -102,6 +120,13 @@ impl AppConfig {
             status_code_valid: self.config.server.status_code_valid,
             status_code_spam: self.config.server.status_code_spam,
             logging: self.config.logging.request_handler,
+            metrics: self.metrics.clone(),
+        }
+    }
+
+    fn to_metric_service(&self) -> MetricApp {
+        MetricApp {
+            metrics: self.metrics.clone(),
         }
     }
 
@@ -132,6 +157,21 @@ fn handle_connection(app_config: &AppConfig, result: io::Result<(TcpStream, Sock
             });
         }
         Err(e) => log::error!("error handling connection: {e}"),
+    }
+}
+
+fn handle_metrics(app_config: &AppConfig, result: io::Result<(TcpStream, SocketAddr)>) {
+    match result {
+        Ok((stream, _addr)) => {
+            let io = TokioIo::new(stream);
+            let app = app_config.to_metric_service();
+            tokio::task::spawn(async move {
+                if let Err(e) = http1::Builder::new().serve_connection(io, app).await {
+                    println!("Failed to serve metrics: {e}");
+                }
+            });
+        }
+        Err(e) => log::error!("error handling metrics: {e}"),
     }
 }
 

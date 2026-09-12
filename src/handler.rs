@@ -1,8 +1,14 @@
 use crate::classifier::{Classification, Classifier, Decision};
 use crate::garbage::Garbage;
+use crate::metrics::{Metrics, record_request};
 use hyper::service::Service;
 use hyper::{Request, Response, StatusCode, body::Incoming as IncomingBody};
-use std::{net::IpAddr, pin::Pin, sync::Arc, time::Instant};
+use std::{
+    net::IpAddr,
+    pin::Pin,
+    sync::{Arc, Mutex},
+    time::Instant,
+};
 
 type BodyType = Response<String>;
 type HandlerOutput<'r> = (Classification<'r>, BodyType);
@@ -18,6 +24,7 @@ pub struct App {
     pub status_code_valid: http::StatusCode,
     pub status_code_spam: http::StatusCode,
     pub logging: bool,
+    pub metrics: Arc<Mutex<Metrics>>,
 }
 
 impl App {
@@ -32,7 +39,7 @@ impl App {
 }
 
 impl Service<Request<IncomingBody>> for App {
-    type Response = Response<String>;
+    type Response = BodyType;
     type Error = hyper::Error;
     type Future = ServiceFuture;
 
@@ -58,7 +65,7 @@ impl Service<Request<IncomingBody>> for App {
                 classification.decision,
             );
         }
-        // record_metrics(classification);
+        record_request(&self.metrics, classification);
         Box::pin(async { Ok(resp) })
     }
 }
@@ -104,4 +111,29 @@ fn request_path<B>(req: &Request<B>) -> &str {
         .path_and_query()
         .map(|pq| pq.as_str())
         .unwrap_or("/")
+}
+
+#[derive(Debug, Clone)]
+pub struct MetricApp {
+    pub metrics: Arc<Mutex<Metrics>>,
+}
+
+impl Service<Request<IncomingBody>> for MetricApp {
+    type Response = BodyType;
+    type Error = hyper::Error;
+    type Future = ServiceFuture;
+
+    fn call(&self, _req: Request<IncomingBody>) -> Self::Future {
+        let output = {
+            let mut metrics = self.metrics.lock().unwrap();
+            metrics.to_prometheus()
+        };
+
+        let resp = Response::builder()
+            .status(StatusCode::OK)
+            .body(output)
+            .unwrap();
+
+        Box::pin(async { Ok(resp) })
+    }
 }

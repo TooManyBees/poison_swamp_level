@@ -1,0 +1,203 @@
+use crate::classifier::{Classification, Decision, SpamReason, ValidReason};
+use crate::config::Config;
+use std::collections::HashMap;
+use std::fmt::Write;
+use std::sync::{
+    Arc, Mutex,
+    atomic::{AtomicU64, Ordering},
+};
+
+#[derive(Debug, Default)]
+pub struct Metrics {
+    request_counter: HashMap<MetricKey, AtomicU64>,
+    classification_spam_counter: HashMap<MetricKey, AtomicU64>,
+    classification_valid_counter: HashMap<MetricKey, AtomicU64>,
+    asn_counter: HashMap<MetricKey, AtomicU64>,
+
+    output_buffer: String,
+}
+
+impl Metrics {
+    pub fn request_counter(&mut self, labels: Vec<MetricLabel>) -> &AtomicU64 {
+        let key = MetricKey {
+            name: "requests",
+            labels,
+        };
+        self.request_counter.entry(key).or_insert(AtomicU64::new(0))
+    }
+
+    pub fn classification_spam_counter(&mut self, labels: Vec<MetricLabel>) -> &AtomicU64 {
+        let key = MetricKey {
+            name: "classifications.spam",
+            labels,
+        };
+        self.classification_spam_counter
+            .entry(key)
+            .or_insert(AtomicU64::new(0))
+    }
+
+    pub fn classification_valid_counter(&mut self, labels: Vec<MetricLabel>) -> &AtomicU64 {
+        let key = MetricKey {
+            name: "classifications.valid",
+            labels,
+        };
+        self.classification_valid_counter
+            .entry(key)
+            .or_insert(AtomicU64::new(0))
+    }
+
+    pub fn asn_counter(&mut self, asn: u32) -> &AtomicU64 {
+        let label = MetricLabel("asn", asn.to_string());
+        let key = MetricKey {
+            name: "asns",
+            labels: vec![label],
+        };
+        self.asn_counter.entry(key).or_insert(AtomicU64::new(0))
+    }
+
+    pub fn to_prometheus(&mut self) -> String {
+        let mut output_buffer = std::mem::take(&mut self.output_buffer);
+        output_buffer.clear();
+        for (key, inner) in &self.request_counter {
+            append_metric_output(
+                &mut output_buffer,
+                key,
+                inner,
+                "counter",
+                "Number of requests",
+            );
+        }
+        for (key, inner) in &self.classification_spam_counter {
+            append_metric_output(
+                &mut output_buffer,
+                key,
+                inner,
+                "counter",
+                "Number of spam classifications",
+            );
+        }
+        for (key, inner) in &self.classification_valid_counter {
+            append_metric_output(
+                &mut output_buffer,
+                key,
+                inner,
+                "counter",
+                "Number of valid classifications",
+            );
+        }
+        for (key, inner) in &self.asn_counter {
+            append_metric_output(
+                &mut output_buffer,
+                key,
+                inner,
+                "counter",
+                "ASNs whence originate spam",
+            );
+        }
+        self.output_buffer = output_buffer;
+        self.output_buffer.clone()
+    }
+}
+
+fn append_metric_output(
+    output_buffer: &mut String,
+    key: &MetricKey,
+    inner: &AtomicU64,
+    kind: &'static str,
+    desc: &'static str,
+) {
+    output_buffer.push_str("# HELP ");
+    output_buffer.push_str(key.name);
+    output_buffer.push(' ');
+    output_buffer.push_str(desc);
+    output_buffer.push('\n');
+
+    output_buffer.push_str("# TYPE ");
+    output_buffer.push_str(key.name);
+    output_buffer.push(' ');
+    output_buffer.push_str(kind);
+    output_buffer.push('\n');
+
+    output_buffer.push_str(key.name);
+    if !key.labels.is_empty() {
+        output_buffer.push('{');
+        for (n, MetricLabel(name, value)) in key.labels.iter().enumerate() {
+            if n > 0 {
+                output_buffer.push(',');
+            }
+            output_buffer.push_str(name);
+            output_buffer.push_str("=\"");
+            output_buffer.push_str(value);
+            output_buffer.push('"');
+        }
+        output_buffer.push('}');
+    }
+    let value = inner.load(Ordering::Acquire);
+    let _ = writeln!(output_buffer, " {value}");
+}
+
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub struct MetricLabel(&'static str, String);
+
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+struct MetricKey {
+    name: &'static str,
+    labels: Vec<MetricLabel>,
+}
+
+pub fn init(config: &Config) -> Arc<Mutex<Metrics>> {
+    let metrics = Metrics::default();
+
+    // TODO: load and set persisted metrics
+
+    Arc::new(Mutex::new(metrics))
+}
+
+pub fn record_request(metrics: &Mutex<Metrics>, c: Classification) {
+    let mut labels = Vec::with_capacity(1);
+    if let Some(host) = c.host {
+        labels.push(MetricLabel("host", host.to_string()));
+    }
+    let mut metrics = metrics.lock().unwrap();
+    metrics
+        .request_counter(labels.clone())
+        .fetch_add(1, Ordering::Release);
+    match c.decision {
+        Decision::Valid(reason) => {
+            match reason {
+                ValidReason::Default => labels.push(MetricLabel("reason", "default".into())),
+                ValidReason::TrustedIP(_) => {
+                    labels.push(MetricLabel("reason", "trusted ip".into()))
+                }
+                ValidReason::TrustedPath(_) => {
+                    labels.push(MetricLabel("reason", "trusted path".into()))
+                }
+                ValidReason::TrustedAgent(_) => {
+                    labels.push(MetricLabel("reason", "trusted agent".into()))
+                }
+                ValidReason::TrustedDecision => {}
+            }
+            metrics
+                .classification_valid_counter(labels)
+                .fetch_add(1, Ordering::Release);
+        }
+        Decision::Spam(reason) => {
+            match reason {
+                SpamReason::Poison(_) => labels.push(MetricLabel("reason", "poison".into())),
+                SpamReason::UnwantedASN(_) => {
+                    labels.push(MetricLabel("reason", "unwanted ASN".into()))
+                }
+                SpamReason::UnwantedAgent(_) => {
+                    labels.push(MetricLabel("reason", "unwanted agent".into()))
+                }
+                SpamReason::TrustedDecision => {}
+            }
+            metrics
+                .classification_spam_counter(labels)
+                .fetch_add(1, Ordering::Release);
+            if let Some(asn) = c.asn {
+                metrics.asn_counter(asn).fetch_add(1, Ordering::Release);
+            }
+        }
+    }
+}
