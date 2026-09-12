@@ -3,6 +3,8 @@ use crate::config::Config;
 use compact_str::{CompactString, ToCompactString};
 use std::collections::HashMap;
 use std::fmt::Write;
+#[cfg(target_os = "linux")]
+use std::sync::LazyLock;
 use std::sync::{
     Arc, Mutex,
     atomic::{AtomicU64, Ordering},
@@ -130,6 +132,10 @@ impl Metrics {
                 "ASNs hiding spam",
             );
         }
+
+        #[cfg(target_os = "linux")]
+        append_procfs_metrics(&mut output_buffer);
+
         self.output_buffer = output_buffer;
         self.output_buffer.clone()
     }
@@ -137,7 +143,7 @@ impl Metrics {
 
 #[allow(unused)]
 enum MetricValue<'a> {
-    Int(u64),
+    Int(i64),
     AtomicInt(&'a AtomicU64),
     Float(f64),
 }
@@ -278,5 +284,80 @@ pub fn record_request(metrics: &Mutex<Metrics>, c: Classification) {
             }
             SpamReason::TrustedDecision => {}
         },
+    }
+}
+
+#[cfg(target_os = "linux")]
+static PAGE_SIZE: LazyLock<i64> =
+    LazyLock::new(|| unsafe { libc::sysconf(libc::_SC_PAGESIZE) }.into());
+#[cfg(target_os = "linux")]
+static CLK_TICK: LazyLock<f64> =
+    LazyLock::new(|| unsafe { libc::sysconf(libc::_SC_CLK_TCK) } as f64);
+
+#[cfg(target_os = "linux")]
+fn append_procfs_metrics(output_buffer: &mut String) {
+    if let Ok(p) = procfs::process::Process::myself() {
+        if let Ok(stat) = p.stat() {
+            append_metric_output(
+                output_buffer,
+                "threads",
+                &[],
+                MetricValue::Int(stat.num_threads as i64),
+                "gauge",
+                "Number of OS threads in the process",
+            );
+            append_metric_output(
+                output_buffer,
+                "vss_bytes",
+                &[],
+                MetricValue::Int(stat.vsize as i64),
+                "gauge",
+                "Virtual memory size in bytes",
+            );
+            append_metric_output(
+                output_buffer,
+                "rss_bytes",
+                &[],
+                MetricValue::Int(stat.rss as i64 * *PAGE_SIZE),
+                "gauge",
+                "Resident memory size in bytes",
+            );
+            append_metric_output(
+                output_buffer,
+                "cpu_time_seconds",
+                &[],
+                MetricValue::Float((stat.utime + stat.stime) as f64 / *CLK_TICK),
+                "gauge",
+                "Total user and system CPU time in seconds",
+            );
+        }
+        if let Ok(fd_count) = p.fd_count() {
+            append_metric_output(
+                output_buffer,
+                "fds",
+                &[MetricLabel(
+                    CompactString::const_new("fds"),
+                    CompactString::const_new("open"),
+                )],
+                MetricValue::Int(fd_count as i64),
+                "gauge",
+                "Number of open file descriptors",
+            );
+        }
+        if let Ok(limits) = p.limits() {
+            if let procfs::process::LimitValue::Value(max) = limits.max_open_files.soft_limit {
+                append_metric_output(
+                    output_buffer,
+                    "fds",
+                    &[MetricLabel(
+                        CompactString::const_new("fds"),
+                        CompactString::const_new("max"),
+                    )],
+                    MetricValue::Int(max as i64),
+                    "gauge",
+                    "Number of open file descriptors",
+                );
+            }
+        }
     }
 }
