@@ -1,5 +1,6 @@
 use crate::classifier::{Classification, Decision, SpamReason, ValidReason};
 use crate::config::Config;
+use compact_str::{CompactString, ToCompactString};
 use std::collections::HashMap;
 use std::fmt::Write;
 use std::sync::{
@@ -21,7 +22,7 @@ pub struct Metrics {
 impl Metrics {
     pub fn increment_request(&mut self, labels: Vec<MetricLabel>) {
         let key = MetricKey {
-            name: "requests",
+            name: CompactString::const_new("requests"),
             labels,
         };
         self.request_counter
@@ -32,7 +33,7 @@ impl Metrics {
 
     pub fn increment_classification_spam(&mut self, labels: Vec<MetricLabel>) {
         let key = MetricKey {
-            name: "classifications.spam",
+            name: CompactString::const_new("classifications.spam"),
             labels,
         };
         self.classification_spam_counter
@@ -43,7 +44,7 @@ impl Metrics {
 
     pub fn increment_classification_valid(&mut self, labels: Vec<MetricLabel>) {
         let key = MetricKey {
-            name: "classifications.valid",
+            name: CompactString::const_new("classifications.valid"),
             labels,
         };
         self.classification_valid_counter
@@ -53,9 +54,9 @@ impl Metrics {
     }
 
     pub fn increment_asn_known(&mut self, asn: u32) {
-        let label = MetricLabel("asn", asn.to_string());
+        let label = MetricLabel(CompactString::const_new("asn"), asn.to_compact_string());
         let key = MetricKey {
-            name: "asns_known",
+            name: CompactString::const_new("asns_known"),
             labels: vec![label],
         };
         self.asn_known_counter
@@ -65,9 +66,9 @@ impl Metrics {
     }
 
     pub fn increment_asn_hidden(&mut self, asn: u32) {
-        let label = MetricLabel("asn", asn.to_string());
+        let label = MetricLabel(CompactString::const_new("asn"), asn.to_compact_string());
         let key = MetricKey {
-            name: "asns_hidden",
+            name: CompactString::const_new("asns_hidden"),
             labels: vec![label],
         };
         self.asn_hidden_counter
@@ -137,18 +138,18 @@ fn append_metric_output(
     desc: &'static str,
 ) {
     output_buffer.push_str("# HELP ");
-    output_buffer.push_str(key.name);
+    output_buffer.push_str(&key.name);
     output_buffer.push(' ');
     output_buffer.push_str(desc);
     output_buffer.push('\n');
 
     output_buffer.push_str("# TYPE ");
-    output_buffer.push_str(key.name);
+    output_buffer.push_str(&key.name);
     output_buffer.push(' ');
     output_buffer.push_str(kind);
     output_buffer.push('\n');
 
-    output_buffer.push_str(key.name);
+    output_buffer.push_str(&key.name);
     if !key.labels.is_empty() {
         output_buffer.push('{');
         for (n, MetricLabel(name, value)) in key.labels.iter().enumerate() {
@@ -167,11 +168,11 @@ fn append_metric_output(
 }
 
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
-pub struct MetricLabel(&'static str, String);
+pub struct MetricLabel(CompactString, CompactString);
 
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 struct MetricKey {
-    name: &'static str,
+    name: CompactString,
     labels: Vec<MetricLabel>,
 }
 
@@ -186,47 +187,71 @@ pub fn init(config: &Config) -> Arc<Mutex<Metrics>> {
 pub fn record_request(metrics: &Mutex<Metrics>, c: Classification) {
     let mut labels = Vec::with_capacity(1);
     if let Some(host) = c.host {
-        labels.push(MetricLabel("host", host.to_string()));
+        labels.push(MetricLabel(
+            CompactString::const_new("host"),
+            CompactString::from(host),
+        ));
     }
     let mut metrics = metrics.lock().unwrap();
     metrics.increment_request(labels.clone());
     match c.decision {
         Decision::Valid(reason) => match reason {
             ValidReason::Default => {
-                labels.push(MetricLabel("reason", "default".into()));
+                labels.push(MetricLabel(
+                    CompactString::const_new("reason"),
+                    CompactString::const_new("default"),
+                ));
                 metrics.increment_classification_valid(labels);
             }
             ValidReason::TrustedIP(_) => {
-                labels.push(MetricLabel("reason", "trusted ip".into()));
+                labels.push(MetricLabel(
+                    CompactString::const_new("reason"),
+                    CompactString::const_new("trusted ip"),
+                ));
                 metrics.increment_classification_valid(labels);
             }
             ValidReason::TrustedPath(_) => {
-                labels.push(MetricLabel("reason", "trusted path".into()));
+                labels.push(MetricLabel(
+                    CompactString::const_new("reason"),
+                    CompactString::const_new("trusted path"),
+                ));
                 metrics.increment_classification_valid(labels);
             }
             ValidReason::TrustedAgent(_) => {
-                labels.push(MetricLabel("reason", "trusted agent".into()));
+                labels.push(MetricLabel(
+                    CompactString::const_new("reason"),
+                    CompactString::const_new("trusted agent"),
+                ));
                 metrics.increment_classification_valid(labels);
             }
             ValidReason::TrustedDecision => {}
         },
         Decision::Spam(reason) => match reason {
             SpamReason::Poison(_) => {
-                labels.push(MetricLabel("reason", "poison".into()));
+                labels.push(MetricLabel(
+                    CompactString::const_new("reason"),
+                    CompactString::const_new("poison"),
+                ));
                 metrics.increment_classification_spam(labels);
                 if let Some(asn) = c.asn {
                     metrics.increment_asn_hidden(asn);
                 }
             }
             SpamReason::UnwantedASN(_) => {
-                labels.push(MetricLabel("reason", "unwanted ASN".into()));
+                labels.push(MetricLabel(
+                    CompactString::const_new("reason"),
+                    CompactString::const_new("unwanted ASN"),
+                ));
                 metrics.increment_classification_spam(labels);
                 if let Some(asn) = c.asn {
                     metrics.increment_asn_known(asn);
                 }
             }
             SpamReason::UnwantedAgent(_) => {
-                labels.push(MetricLabel("reason", "unwanted agent".into()));
+                labels.push(MetricLabel(
+                    CompactString::const_new("reason"),
+                    CompactString::const_new("unwanted agent"),
+                ));
                 metrics.increment_classification_spam(labels);
                 if let Some(asn) = c.asn {
                     metrics.increment_asn_known(asn);
