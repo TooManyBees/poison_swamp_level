@@ -83,8 +83,9 @@ impl Metrics {
         for (key, inner) in &self.request_counter {
             append_metric_output(
                 &mut output_buffer,
-                key,
-                inner,
+                &key.name,
+                &key.labels,
+                MetricValue::AtomicInt(inner),
                 "counter",
                 "Number of requests",
             );
@@ -92,8 +93,9 @@ impl Metrics {
         for (key, inner) in &self.classification_spam_counter {
             append_metric_output(
                 &mut output_buffer,
-                key,
-                inner,
+                &key.name,
+                &key.labels,
+                MetricValue::AtomicInt(inner),
                 "counter",
                 "Number of spam classifications",
             );
@@ -101,8 +103,9 @@ impl Metrics {
         for (key, inner) in &self.classification_valid_counter {
             append_metric_output(
                 &mut output_buffer,
-                key,
-                inner,
+                &key.name,
+                &key.labels,
+                MetricValue::AtomicInt(inner),
                 "counter",
                 "Number of valid classifications",
             );
@@ -110,8 +113,9 @@ impl Metrics {
         for (key, inner) in &self.asn_known_counter {
             append_metric_output(
                 &mut output_buffer,
-                key,
-                inner,
+                &key.name,
+                &key.labels,
+                MetricValue::AtomicInt(inner),
                 "counter",
                 "ASNs whence originate spam",
             );
@@ -119,8 +123,9 @@ impl Metrics {
         for (key, inner) in &self.asn_hidden_counter {
             append_metric_output(
                 &mut output_buffer,
-                key,
-                inner,
+                &key.name,
+                &key.labels,
+                MetricValue::AtomicInt(inner),
                 "counter",
                 "ASNs hiding spam",
             );
@@ -130,29 +135,37 @@ impl Metrics {
     }
 }
 
+#[allow(unused)]
+enum MetricValue<'a> {
+    Int(u64),
+    AtomicInt(&'a AtomicU64),
+    Float(f64),
+}
+
 fn append_metric_output(
     output_buffer: &mut String,
-    key: &MetricKey,
-    inner: &AtomicU64,
+    key: &str,
+    labels: &[MetricLabel],
+    value: MetricValue,
     kind: &'static str,
     desc: &'static str,
 ) {
     output_buffer.push_str("# HELP ");
-    output_buffer.push_str(&key.name);
+    output_buffer.push_str(key);
     output_buffer.push(' ');
     output_buffer.push_str(desc);
     output_buffer.push('\n');
 
     output_buffer.push_str("# TYPE ");
-    output_buffer.push_str(&key.name);
+    output_buffer.push_str(key);
     output_buffer.push(' ');
     output_buffer.push_str(kind);
     output_buffer.push('\n');
 
-    output_buffer.push_str(&key.name);
-    if !key.labels.is_empty() {
+    output_buffer.push_str(key);
+    if !labels.is_empty() {
         output_buffer.push('{');
-        for (n, MetricLabel(name, value)) in key.labels.iter().enumerate() {
+        for (n, MetricLabel(name, value)) in labels.iter().enumerate() {
             if n > 0 {
                 output_buffer.push(',');
             }
@@ -163,8 +176,14 @@ fn append_metric_output(
         }
         output_buffer.push('}');
     }
-    let value = inner.load(Ordering::Acquire);
-    let _ = writeln!(output_buffer, " {value}");
+    let _ = match value {
+        MetricValue::Int(i) => writeln!(output_buffer, " {i}"),
+        MetricValue::Float(f) => writeln!(output_buffer, " {f}"),
+        MetricValue::AtomicInt(i) => {
+            let value = i.load(Ordering::Acquire);
+            writeln!(output_buffer, " {value}")
+        }
+    };
 }
 
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
