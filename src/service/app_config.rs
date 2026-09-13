@@ -152,8 +152,6 @@ impl AppConfig {
     }
 
     pub fn persist_metrics(self) {
-        let m: Mutex<Metrics> =
-            Arc::into_inner(self.metrics).expect("at least one psl/metrics service is still live");
-        m.into_inner().unwrap().persist();
+        self.metrics.lock().unwrap().persist();
     }
 }

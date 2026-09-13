@@ -105,9 +105,9 @@ impl Metrics {
         self.output_buffer.clone()
     }
 
-    pub fn persist(mut self) {
+    pub fn persist(&self) {
         if let Some(path) = self.persist_path.clone() {
-            match write_persisted_metrics(&path, &mut self) {
+            match write_persisted_metrics(&path, self) {
                 Ok(_) => log::debug!("Persisted metrics to {path}"),
                 Err(e) => log::error!("Failed to persist metrics to {path}: {e}"),
             }

@@ -1,7 +1,7 @@
 use super::{MetricKey, MetricLabel, Metrics, NamedHashMap};
 use compact_str::CompactString;
-use std::sync::atomic::AtomicU64;
-use std::{fmt, fs::File, io, io::ErrorKind, mem::take, path::Path};
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::{fmt, fs::File, io, io::ErrorKind, path::Path};
 
 type PersistedMetrics = Vec<(
     CompactString,
@@ -65,20 +65,14 @@ fn extract_persisted_metric(map: &mut NamedHashMap, persisted: &mut PersistedMet
     }
 }
 
-pub fn write_persisted_metrics(path: &str, metrics: &mut Metrics) -> Result<(), PersistenceError> {
+pub fn write_persisted_metrics(path: &str, metrics: &Metrics) -> Result<(), PersistenceError> {
     let mut persisted: PersistedMetrics = Vec::with_capacity(5);
 
-    metrics_into_persisted(&mut persisted, take(&mut metrics.request_counter));
-    metrics_into_persisted(
-        &mut persisted,
-        take(&mut metrics.classification_spam_counter),
-    );
-    metrics_into_persisted(
-        &mut persisted,
-        take(&mut metrics.classification_valid_counter),
-    );
-    metrics_into_persisted(&mut persisted, take(&mut metrics.asn_known_counter));
-    metrics_into_persisted(&mut persisted, take(&mut metrics.asn_hidden_counter));
+    metrics_into_persisted(&mut persisted, &metrics.request_counter);
+    metrics_into_persisted(&mut persisted, &metrics.classification_spam_counter);
+    metrics_into_persisted(&mut persisted, &metrics.classification_valid_counter);
+    metrics_into_persisted(&mut persisted, &metrics.asn_known_counter);
+    metrics_into_persisted(&mut persisted, &metrics.asn_hidden_counter);
 
     let parent_dir = Path::new(path).parent().unwrap_or(Path::new("."));
     let file = tempfile::NamedTempFile::new_in(parent_dir).map_err(PersistenceError::Io)?;
@@ -90,19 +84,20 @@ pub fn write_persisted_metrics(path: &str, metrics: &mut Metrics) -> Result<(), 
     Ok(())
 }
 
-fn metrics_into_persisted(persisted: &mut PersistedMetrics, metric: NamedHashMap) {
+fn metrics_into_persisted(persisted: &mut PersistedMetrics, metric: &NamedHashMap) {
     persisted.push((
         metric.name.clone(),
         metric
             .inner
-            .into_iter()
+            .iter()
             .map(|(key, value)| {
                 let labels = key
                     .labels
-                    .into_iter()
+                    .iter()
+                    .cloned()
                     .map(|MetricLabel(name, val)| (name, val))
                     .collect();
-                (labels, value.into_inner())
+                (labels, value.load(Ordering::Acquire))
             })
             .collect(),
     ));
