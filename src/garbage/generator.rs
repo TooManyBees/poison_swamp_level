@@ -1,4 +1,4 @@
-use super::read_text::{ParseError, read, read_from_files, read_from_strings};
+use super::read_text::{ParseError, read_from_files, read_from_strings};
 use rand::{Rng, RngExt, seq::IndexedRandom};
 use std::collections::HashMap;
 use std::ops::RangeInclusive;
@@ -28,11 +28,6 @@ impl fmt::Display for SizeData {
 }
 
 impl Corpus {
-    pub fn from_string(text: &str) -> Result<Corpus, ParseError> {
-        let (text, map, states) = read(text)?;
-        Ok(Corpus { text, map, states })
-    }
-
     pub fn from_strings(texts: &[&str]) -> Result<Corpus, ParseError> {
         let (text, map, states) = read_from_strings(texts)?;
         Ok(Corpus { text, map, states })

@@ -8,12 +8,6 @@ use std::{fmt, fs::File, io, io::Read};
 
 type Parsed = (String, HashMap<State, Vec<Substring>>, Vec<State>);
 
-pub fn read(text: &str) -> Result<Parsed, ParseError> {
-    let mut parse_state = ParseState::default();
-    parse_state.read(text);
-    parse_state.finish()
-}
-
 pub fn read_from_strings(texts: &[&str]) -> Result<Parsed, ParseError> {
     let mut parse_state = ParseState::default();
     for text in texts {
