@@ -576,7 +576,7 @@ fn annotate_span(
     location: Location,
 ) -> fmt::Result {
     let max_line = location.line + 2; // FIXME
-    let num_cols = max_line.checked_ilog10().unwrap_or(1).max(1) as usize;
+    let num_cols = max_line.checked_ilog10().unwrap_or(0) as usize + 1;
     f.write_char('\n')?;
     for (n, line) in source.lines().enumerate() {
         let line_no = n + starting_line;
