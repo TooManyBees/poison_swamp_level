@@ -114,9 +114,12 @@ async fn main() {
         }
     }
 
+    const GRACE_SECONDS: u64 = 5;
     tokio::select! {
         _ = graceful.shutdown() => {}
-        _ = sleep(Duration::from_secs(5)) => {}
+        _ = sleep(Duration::from_secs(GRACE_SECONDS)) => {
+            log::warn!("Service terminated after waiting {GRACE_SECONDS} seconds");
+        }
     }
 
     app_config.persist_metrics();
