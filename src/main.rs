@@ -27,7 +27,10 @@ async fn main() {
 
     init_logger(&config);
 
-    let mut app_config = AppConfig::from_config(config).unwrap();
+    let mut app_config = AppConfig::from_config(config).unwrap_or_else(|e| {
+        log::error!("Couldn't initialize program: {e}");
+        std::process::exit(1);
+    });
     #[allow(unused_mut)]
     let mut listener = app_config
         .listen()

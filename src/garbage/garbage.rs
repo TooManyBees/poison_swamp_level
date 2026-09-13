@@ -137,7 +137,7 @@ impl Garbage {
             ("links".into(), links),
         ]));
         let renderer = self.template.render_from(&self.engine, &data);
-        renderer.to_string().unwrap()
+        renderer.to_string().expect("can't render template")
     }
 }
 

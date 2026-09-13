@@ -196,7 +196,11 @@ fn parse_garbage_links(node: &KdlNode) -> Result<Links, ParseError> {
                 }
             }
             "separator" => {
-                links.separator = child.one_string_arg()?.chars().nth(0).unwrap();
+                links.separator = child
+                    .one_string_arg()?
+                    .chars()
+                    .nth(0)
+                    .expect("string is already tested to not be empty");
             }
             "trailing-slash" => links.trailing_slash = child.one_booleanish_entry()?,
             _ => {}
