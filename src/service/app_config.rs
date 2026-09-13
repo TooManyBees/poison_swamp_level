@@ -43,6 +43,10 @@ impl AppConfig {
         })
     }
 
+    pub fn replace_metrics(&mut self, other: &AppConfig) {
+        self.metrics = other.metrics.clone();
+    }
+
     pub fn to_service(&self, client_ip: IpAddr) -> PslHandler {
         PslHandler {
             client_ip,
@@ -145,5 +149,11 @@ impl AppConfig {
             }
             Err(e) => log::error!("error handling metrics: {e}"),
         }
+    }
+
+    pub fn persist_metrics(self) {
+        let m: Mutex<Metrics> =
+            Arc::into_inner(self.metrics).expect("at least one psl/metrics service is still live");
+        m.into_inner().unwrap().persist();
     }
 }

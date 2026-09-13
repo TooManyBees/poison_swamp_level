@@ -70,7 +70,7 @@ async fn main() {
             metrics_listen_result = metrics_listener.accept() => {
                 app_config.handle_metrics(metrics_listen_result, &graceful);
             },
-            Some(new_app_config) = config_reload.recv() => {
+            Some(mut new_app_config) = config_reload.recv() => {
                 let mut new_listener = None;
                 if app_config.listen_addr() != new_app_config.listen_addr() {
                     match new_app_config.listen().await {
@@ -98,6 +98,7 @@ async fn main() {
                 if let Some(l) = new_metrics_listener {
                     metrics_listener = l;
                 }
+                new_app_config.replace_metrics(&app_config);
                 app_config = new_app_config;
 
                 log::info!("Reloaded config");
@@ -114,6 +115,8 @@ async fn main() {
         _ = graceful.shutdown() => {}
         _ = sleep(Duration::from_secs(5)) => {}
     }
+
+    app_config.persist_metrics();
 }
 
 async fn ctrl_c_handler() {

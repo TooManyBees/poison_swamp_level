@@ -104,6 +104,15 @@ impl Metrics {
         self.output_buffer = output_buffer;
         self.output_buffer.clone()
     }
+
+    pub fn persist(mut self) {
+        if let Some(path) = self.persist_path.clone() {
+            match write_persisted_metrics(&path, &mut self) {
+                Ok(_) => log::debug!("Persisted metrics to {path}"),
+                Err(e) => log::error!("Failed to persist metrics to {path}: {e}"),
+            }
+        }
+    }
 }
 
 pub fn init(config: &Config) -> Arc<Mutex<Metrics>> {
@@ -220,16 +229,5 @@ pub fn record_request(metrics: &Mutex<Metrics>, c: Classification) {
             }
             SpamReason::TrustedDecision => {}
         },
-    }
-}
-
-impl Drop for Metrics {
-    fn drop(&mut self) {
-        if let Some(path) = self.persist_path.clone() {
-            match write_persisted_metrics(&path, self) {
-                Ok(_) => log::debug!("Persisted metrics to {path}"),
-                Err(e) => log::error!("Failed to persist metrics to {path}: {e}"),
-            }
-        }
     }
 }
