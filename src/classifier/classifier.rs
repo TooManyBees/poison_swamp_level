@@ -27,16 +27,6 @@ pub struct Classifier {
 
 impl Classifier {
     pub fn new(config: &Config) -> Result<Self, ClassifierError> {
-        let trusted_decision_header = config
-            .classifier
-            .trusted_decision_header
-            .as_ref()
-            .map(|header_name| {
-                HeaderName::from_bytes(header_name.as_bytes())
-                    .map_err(|_| ClassifierError::InvalidHeader(header_name.to_string()))
-            })
-            .transpose()?;
-
         let asns_db = if let Some(path) = config.classifier.asns_db_path.as_ref() {
             let then = Instant::now();
             let db = Reader::open_readfile(path)?;
@@ -90,8 +80,7 @@ impl Classifier {
 
         Ok(Classifier {
             poisons: config.garbage.poisons.clone(),
-            trusted_decision_header,
-
+            trusted_decision_header: config.classifier.trusted_decision_header.clone(),
             asns_db,
             unwanted_asns,
             unwanted_agents,
@@ -293,7 +282,6 @@ impl<'a> fmt::Display for SpamReason<'a> {
 #[derive(Debug)]
 pub enum ClassifierError {
     Io(std::io::Error),
-    InvalidHeader(String),
     MaxMindDb(MaxMindDbError),
     Json(serde_json::Error),
     Matcher(BuildError),
@@ -327,7 +315,6 @@ impl fmt::Display for ClassifierError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             ClassifierError::Io(e) => e.fmt(f),
-            ClassifierError::InvalidHeader(s) => write!(f, "invalid header: {s}"),
             ClassifierError::MaxMindDb(e) => e.fmt(f),
             ClassifierError::Json(e) => e.fmt(f),
             ClassifierError::Matcher(e) => e.fmt(f),

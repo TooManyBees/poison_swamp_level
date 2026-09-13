@@ -1,5 +1,6 @@
 use super::{ParseError, load_config};
 use http::StatusCode;
+use http::header::HeaderName;
 use log::LevelFilter;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr, SocketAddrV4};
 use std::{ops::RangeInclusive, path::Path};
@@ -28,7 +29,7 @@ pub struct Classifier {
     pub trusted_ips: Vec<IpAddr>,
     pub trusted_paths: Vec<String>,
     pub trusted_agents: Vec<String>,
-    pub trusted_decision_header: Option<String>,
+    pub trusted_decision_header: Option<HeaderName>,
 }
 
 #[derive(Debug, Default, PartialEq, Eq)]

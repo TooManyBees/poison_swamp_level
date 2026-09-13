@@ -1,6 +1,7 @@
 use super::config::{
     Classifier, Config, Garbage, Links, LogTarget, Logging, Metrics, Server, ServerMode,
 };
+use http::header::HeaderName;
 use http::status::StatusCode;
 use kdl::{KdlDocument, KdlEntry, KdlError, KdlNode};
 use log::LevelFilter;
@@ -95,7 +96,11 @@ fn parse_classifier(node: &KdlNode) -> Result<Classifier, ParseError> {
     for child in node.iter_children() {
         match child.name().value() {
             "trusted-decision-header" => {
-                classifier.trusted_decision_header = Some(child.one_string_arg()?);
+                let entry = child.one_string_entry()?;
+                match HeaderName::from_bytes(entry.as_ref().as_bytes()) {
+                    Ok(header) => classifier.trusted_decision_header = Some(header),
+                    Err(e) => return Err(ParseError::from_entry(&entry, format!("{e}"))),
+                }
             }
             "user-agents" => {
                 for child in child.iter_children() {
