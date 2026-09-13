@@ -29,7 +29,10 @@ impl Classifier {
     pub fn new(config: &Config) -> Result<Self, ClassifierError> {
         let asns_db = if let Some(path) = config.classifier.asns_db_path.as_ref() {
             let then = Instant::now();
-            let db = Reader::open_readfile(path)?;
+            let db = Reader::open_readfile(path).map_err(|e| match e {
+                MaxMindDbError::Io(e) => ClassifierError::Io(path.to_string(), e),
+                e => ClassifierError::MaxMindDb(e),
+            })?;
             log::debug!("Read ANSs database in {}ms", then.elapsed().as_millis());
             Some(db)
         } else {
@@ -46,7 +49,12 @@ impl Classifier {
             .classifier
             .robots_json_path
             .as_ref()
-            .map(load_robots_json)
+            .map(|path| {
+                load_robots_json(&path).map_err(|e| match e {
+                    RobotsJsonError::Io(e) => ClassifierError::Io(path.to_string(), e),
+                    RobotsJsonError::Json(e) => ClassifierError::Json(e),
+                })
+            })
             .transpose()?;
 
         let mut unwanted_agents = config.classifier.unwanted_agents.clone();
@@ -281,28 +289,10 @@ impl<'a> fmt::Display for SpamReason<'a> {
 
 #[derive(Debug)]
 pub enum ClassifierError {
-    Io(std::io::Error),
+    Io(String, std::io::Error),
     MaxMindDb(MaxMindDbError),
     Json(serde_json::Error),
     Matcher(BuildError),
-}
-
-impl From<MaxMindDbError> for ClassifierError {
-    fn from(e: MaxMindDbError) -> ClassifierError {
-        match e {
-            MaxMindDbError::Io(e) => ClassifierError::Io(e),
-            e => ClassifierError::MaxMindDb(e),
-        }
-    }
-}
-
-impl From<RobotsJsonError> for ClassifierError {
-    fn from(e: RobotsJsonError) -> ClassifierError {
-        match e {
-            RobotsJsonError::Io(e) => ClassifierError::Io(e),
-            RobotsJsonError::Json(e) => ClassifierError::Json(e),
-        }
-    }
 }
 
 impl From<BuildError> for ClassifierError {
@@ -314,7 +304,7 @@ impl From<BuildError> for ClassifierError {
 impl fmt::Display for ClassifierError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            ClassifierError::Io(e) => e.fmt(f),
+            ClassifierError::Io(path, e) => write!(f, "Couldn't read from {path}: {e}"),
             ClassifierError::MaxMindDb(e) => e.fmt(f),
             ClassifierError::Json(e) => e.fmt(f),
             ClassifierError::Matcher(e) => e.fmt(f),

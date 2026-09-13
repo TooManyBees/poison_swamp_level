@@ -28,10 +28,12 @@ async fn main() {
 
     init_logger(&config);
 
+    log::info!("Startup");
     let mut app_config = AppConfig::from_config(config).unwrap_or_else(|e| {
-        log::error!("Couldn't initialize program: {e}");
+        log::error!("Aborting program: {e}");
         std::process::exit(1);
     });
+
     #[allow(unused_mut)]
     let mut listener = app_config
         .listen()
@@ -124,6 +126,7 @@ async fn main() {
     }
 
     app_config.persist_metrics();
+    log::info!("Shutdown");
 }
 
 fn config_path() -> Result<String, ()> {

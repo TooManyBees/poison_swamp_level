@@ -2,7 +2,7 @@ use super::generator::{JOIN_AFTER, JOIN_BEFORE, State, Substring, is_ending};
 use std::borrow::Cow;
 use std::collections::HashMap;
 use std::iter::Peekable;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::str::CharIndices;
 use std::{fmt, fs::File, io, io::Read};
 
@@ -21,8 +21,9 @@ pub fn read_from_files<P: AsRef<Path>>(paths: &[P]) -> Result<Parsed, ParseError
     let mut regions = Vec::with_capacity(paths.len());
     for path in paths {
         let start = text.len();
-        let mut f = File::open(path)?;
-        f.read_to_string(&mut text)?;
+        let mut f = File::open(path).map_err(|e| ParseError::Io(path.as_ref().to_path_buf(), e))?;
+        f.read_to_string(&mut text)
+            .map_err(|e| ParseError::Io(path.as_ref().to_path_buf(), e))?;
         regions.push(start..text.len());
     }
     let files: Vec<_> = regions.into_iter().map(|range| &text[range]).collect();
@@ -258,20 +259,14 @@ impl<'a> Iterator for SubstringsWindows<'a> {
 
 #[derive(Debug)]
 pub enum ParseError {
-    Io(io::Error),
+    Io(PathBuf, io::Error),
     NoContent,
-}
-
-impl From<io::Error> for ParseError {
-    fn from(e: io::Error) -> ParseError {
-        ParseError::Io(e)
-    }
 }
 
 impl fmt::Display for ParseError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            ParseError::Io(e) => e.fmt(f),
+            ParseError::Io(path, e) => write!(f, "Couldn't read from {}: {}", path.display(), e),
             ParseError::NoContent => write!(f, "The generator did not find any content."),
         }
     }

@@ -7,6 +7,7 @@ use std::collections::BTreeMap;
 use std::fmt;
 use std::fs;
 use std::ops::RangeInclusive;
+use std::path::PathBuf;
 use std::time::Instant;
 use upon::{Engine, Template, Value};
 
@@ -27,7 +28,10 @@ pub struct Garbage {
 impl Garbage {
     pub fn new(config: &Config) -> Result<Self, GarbageError> {
         let now = Instant::now();
-        let corpus = Corpus::from_files(&config.garbage.source_files)?;
+        let corpus = Corpus::from_files(&config.garbage.source_files).map_err(|e| match e {
+            ParseError::Io(path, e) => GarbageError::Io(path, e),
+            ParseError::NoContent => GarbageError::CorpusEmpty,
+        })?;
         let size_data = corpus.size();
         log::debug!(
             "Trained garbage generator ({}) in {}ms",
@@ -41,7 +45,9 @@ impl Garbage {
                 .words_file
                 .as_ref()
                 .ok_or(GarbageError::WordsFileMissing)?;
-            let s = fs::read_to_string(words_file)?.leak();
+            let s = fs::read_to_string(words_file)
+                .map_err(|e| GarbageError::Io(PathBuf::from(words_file), e))?
+                .leak();
             let lines: Vec<_> = s.lines().collect();
             let min_words_needed = *config.garbage.links.num_words().end();
             if lines.len() < min_words_needed {
@@ -59,7 +65,9 @@ impl Garbage {
                 .template_file
                 .as_ref()
                 .ok_or(GarbageError::TemplateFileMissing)?;
-            let template_str = fs::read_to_string(template_path)?.leak();
+            let template_str = fs::read_to_string(template_path)
+                .map_err(|e| GarbageError::Io(PathBuf::from(template_path), e))?
+                .leak();
             let engine = Engine::new();
             let template = engine.compile(&*template_str)?;
             (engine, template)
@@ -160,18 +168,12 @@ impl fmt::Debug for Garbage {
 
 #[derive(Debug)]
 pub enum GarbageError {
-    Io(std::io::Error),
+    Io(PathBuf, std::io::Error),
     CorpusEmpty,
     WordsFileMissing,
     WordsListTooShort(String, usize),
     TemplateFileMissing,
     Template(upon::Error),
-}
-
-impl From<std::io::Error> for GarbageError {
-    fn from(e: std::io::Error) -> GarbageError {
-        GarbageError::Io(e)
-    }
 }
 
 impl From<upon::Error> for GarbageError {
@@ -180,19 +182,10 @@ impl From<upon::Error> for GarbageError {
     }
 }
 
-impl From<ParseError> for GarbageError {
-    fn from(e: ParseError) -> GarbageError {
-        match e {
-            ParseError::Io(e) => GarbageError::Io(e),
-            ParseError::NoContent => GarbageError::CorpusEmpty,
-        }
-    }
-}
-
 impl fmt::Display for GarbageError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            GarbageError::Io(e) => e.fmt(f),
+            GarbageError::Io(path, e) => write!(f, "Couldn't read from {}: {}", path.display(), e),
             GarbageError::CorpusEmpty => f.write_str("training corpus is empty"),
             GarbageError::WordsFileMissing => {
                 f.write_str("path to word list file was not specified")
