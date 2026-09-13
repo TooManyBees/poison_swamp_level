@@ -13,17 +13,18 @@ use tokio::{
 
 #[tokio::main(flavor = "local")]
 async fn main() {
-    let config = match Config::read_from_file("./config.kdl") {
-        Ok(config) => config,
-        Err(e) => {
-            if io::stderr().is_terminal() {
-                eprintln!("{}", e.explain());
-            } else {
-                eprintln!("{e}");
-            }
-            std::process::exit(1);
+    let config_path = config_path().unwrap_or_else(|_| {
+        eprintln!("{}", usage());
+        std::process::exit(1);
+    });
+    let config = Config::read_from_file(&config_path).unwrap_or_else(|e| {
+        if io::stderr().is_terminal() {
+            eprintln!("{}", e.explain());
+        } else {
+            eprintln!("{e}");
         }
-    };
+        std::process::exit(1);
+    });
 
     init_logger(&config);
 
@@ -107,7 +108,7 @@ async fn main() {
                 log::info!("Reloaded config");
             },
             _ = sighup.recv() => {
-                reload_config(&app_config, config_reload_tx.clone());
+                reload_config(&config_path, &app_config, config_reload_tx.clone());
             },
             _ = sigterm.recv() => break,
             _ = &mut shutdown_signal => break,
@@ -125,6 +126,32 @@ async fn main() {
     app_config.persist_metrics();
 }
 
+fn config_path() -> Result<String, ()> {
+    let mut args = std::env::args().skip(1);
+    while args.len() > 0 {
+        match args.next().unwrap().to_lowercase().as_str() {
+            "-c" | "--config" => match args.next() {
+                Some(c) => return Ok(c),
+                None => return Err(()),
+            },
+            _arg => {}
+        }
+    }
+    Ok("./config.kdl".into())
+}
+
+fn usage() -> String {
+    "
+Usage: poison_swamp_level [-c <path to config file>]
+
+A config file in KDL format is required. If not given as an argument,
+poison_swamp_level will try to open ./config.kdl in the current dir.
+
+"
+    .trim()
+    .into()
+}
+
 async fn ctrl_c_handler() {
     ctrl_c()
         .await
@@ -132,8 +159,8 @@ async fn ctrl_c_handler() {
 }
 
 #[cfg(unix)]
-fn reload_config(existing: &AppConfig, tx: Sender<AppConfig>) {
-    let new_config = match Config::read_from_file("./config.kdl") {
+fn reload_config(path: &str, existing: &AppConfig, tx: Sender<AppConfig>) {
+    let new_config = match Config::read_from_file(path) {
         Ok(config) => config,
         Err(e) => {
             log::error!("Config reload encountered error: {e}");

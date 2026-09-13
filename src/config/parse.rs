@@ -6,10 +6,11 @@ use http::status::StatusCode;
 use kdl::{KdlDocument, KdlEntry, KdlError, KdlNode};
 use log::LevelFilter;
 use std::fmt::Write;
-use std::{error::Error, fmt, fs, ops::Deref, path::Path, str::FromStr};
+use std::{error::Error, fmt, fs, ops::Deref, path::Path, path::PathBuf, str::FromStr};
 
 pub fn load_config<P: AsRef<Path>>(path: P) -> Result<Config, ParseError> {
-    let source = fs::read_to_string(path)?;
+    let source =
+        fs::read_to_string(&path).map_err(|e| ParseError::Io(path.as_ref().to_path_buf(), e))?;
     let doc = source.parse::<KdlDocument>()?;
     match parse_doc(doc) {
         Ok(config) => Ok(config),
@@ -426,7 +427,7 @@ impl Parseable for KdlNode {
 
 #[derive(Debug)]
 pub enum ParseError {
-    Io(std::io::Error),
+    Io(PathBuf, std::io::Error),
     Kdl(KdlError),
     InvalidBlock {
         source: Option<String>,
@@ -483,9 +484,9 @@ impl ParseError {
 
     pub fn explain(self) -> Explain {
         match self {
-            ParseError::Io(e) => Explain {
+            ParseError::Io(_, _) => Explain {
                 location: None,
-                message: e.to_string(),
+                message: format!("{self}"),
             },
             ParseError::Kdl(e) => Explain {
                 location: None,
@@ -599,12 +600,6 @@ fn annotate_span(
     Ok(())
 }
 
-impl From<std::io::Error> for ParseError {
-    fn from(e: std::io::Error) -> ParseError {
-        ParseError::Io(e)
-    }
-}
-
 impl From<KdlError> for ParseError {
     fn from(e: KdlError) -> ParseError {
         ParseError::Kdl(e)
@@ -616,7 +611,7 @@ impl Error for ParseError {}
 impl fmt::Display for ParseError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            ParseError::Io(e) => e.fmt(f),
+            ParseError::Io(path, e) => write!(f, "Could not open file {}: {}", path.display(), e),
             ParseError::Kdl(e) => e.fmt(f),
             ParseError::InvalidBlock {
                 message,
