@@ -1,10 +1,12 @@
 use super::{MetricKey, MetricLabel, Metrics, NamedHashMap};
 use compact_str::CompactString;
-use std::collections::HashMap;
 use std::sync::atomic::AtomicU64;
 use std::{fmt, fs::File, io, io::ErrorKind, mem::take, path::Path};
 
-type PersistedMetrics = HashMap<CompactString, Vec<(Vec<(CompactString, CompactString)>, u64)>>;
+type PersistedMetrics = Vec<(
+    CompactString,
+    Vec<(Vec<(CompactString, CompactString)>, u64)>,
+)>;
 
 pub enum PersistenceError {
     Io(io::Error),
@@ -44,7 +46,11 @@ pub fn apply_persisted_metrics(metrics: &mut Metrics, mut persisted: PersistedMe
 }
 
 fn extract_persisted_metric(map: &mut NamedHashMap, persisted: &mut PersistedMetrics) {
-    if let Some(ms) = persisted.remove(&map.name) {
+    let metric_name = map.name.clone();
+    if let Some((_, ms)) = persisted
+        .extract_if(.., |(name, _)| *name == metric_name)
+        .nth(0)
+    {
         for (labels, value) in ms {
             let labels = labels
                 .into_iter()
@@ -60,7 +66,7 @@ fn extract_persisted_metric(map: &mut NamedHashMap, persisted: &mut PersistedMet
 }
 
 pub fn write_persisted_metrics(path: &str, metrics: &mut Metrics) -> Result<(), PersistenceError> {
-    let mut persisted: PersistedMetrics = HashMap::new();
+    let mut persisted: PersistedMetrics = Vec::with_capacity(5);
 
     metrics_into_persisted(&mut persisted, take(&mut metrics.request_counter));
     metrics_into_persisted(
@@ -85,7 +91,7 @@ pub fn write_persisted_metrics(path: &str, metrics: &mut Metrics) -> Result<(), 
 }
 
 fn metrics_into_persisted(persisted: &mut PersistedMetrics, metric: NamedHashMap) {
-    persisted.insert(
+    persisted.push((
         metric.name.clone(),
         metric
             .inner
@@ -99,5 +105,5 @@ fn metrics_into_persisted(persisted: &mut PersistedMetrics, metric: NamedHashMap
                 (labels, value.into_inner())
             })
             .collect(),
-    );
+    ));
 }
