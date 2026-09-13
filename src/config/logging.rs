@@ -11,6 +11,7 @@ pub fn init_logger(config: &Config) {
         LogTarget::Stdout => Target::Stdout,
         LogTarget::Stderr => Target::Stderr,
     };
+    let timestamps = config.logging.timestamps;
 
     let mut builder = env_logger::builder();
     let logger = builder
@@ -23,10 +24,17 @@ pub fn init_logger(config: &Config) {
             let target = record.target();
             let args = record.args();
             let level_style = formatter.default_level_style(level);
-            write!(
-                formatter,
-                "{t} [{level_style}{level:<5}{level_style:#} {target}] {args}"
-            )?;
+            if timestamps {
+                write!(
+                    formatter,
+                    "{t} [{level_style}{level:<5}{level_style:#} {target}] {args}"
+                )?;
+            } else {
+                write!(
+                    formatter,
+                    "[{level_style}{level:<5}{level_style:#} {target}] {args}"
+                )?;
+            }
 
             record
                 .key_values()

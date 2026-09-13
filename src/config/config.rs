@@ -134,6 +134,7 @@ pub struct Logging {
     pub level: LevelFilter,
     pub target: LogTarget,
     pub color: bool,
+    pub timestamps: bool,
     pub request_handler: bool,
 }
 
@@ -143,6 +144,7 @@ impl Default for Logging {
             level: LevelFilter::Off,
             target: LogTarget::Stderr,
             color: false,
+            timestamps: true,
             request_handler: false,
         }
     }

@@ -243,6 +243,9 @@ fn parse_logging(node: &KdlNode) -> Result<Logging, ParseError> {
             "color" => {
                 logging.color = child.one_booleanish_entry()?;
             }
+            "timestamps" => {
+                logging.timestamps = child.one_booleanish_entry()?;
+            }
             "request-handler" => {
                 logging.request_handler = child.one_booleanish_entry()?;
             }
