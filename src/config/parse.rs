@@ -441,14 +441,14 @@ pub enum ParseError {
 }
 
 impl ParseError {
-    fn from_node(node: &KdlNode, message: String) -> ParseError {
-        let span = node.span();
-        ParseError::InvalidBlock {
-            source: None,
-            span: (span.offset(), span.offset() + span.len()),
-            message,
-        }
-    }
+    // fn from_node(node: &KdlNode, message: String) -> ParseError {
+    //     let span = node.span();
+    //     ParseError::InvalidBlock {
+    //         source: None,
+    //         span: (span.offset(), span.offset() + span.len()),
+    //         message,
+    //     }
+    // }
 
     fn from_node_name(node: &KdlNode, message: String) -> ParseError {
         let span = node.span();
