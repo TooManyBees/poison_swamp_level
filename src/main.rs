@@ -1,11 +1,14 @@
 use hyper_util::server::graceful::GracefulShutdown;
 use poison_swamp_level::service::AppConfig;
-use poison_swamp_level::{Config, init_logger};
+#[cfg(unix)]
+use poison_swamp_level::service::OptionalListener;
+use poison_swamp_level::{Config, config_path, init_logger};
 use std::io::{self, IsTerminal};
 use std::time::Duration;
 use tokio::time::sleep;
 #[cfg(unix)]
 use tokio::{
+    net::TcpListener,
     signal::ctrl_c,
     signal::unix::{SignalKind, signal},
     sync::{mpsc, mpsc::Sender},
@@ -76,38 +79,8 @@ async fn main() {
             metrics_listen_result = metrics_listener.accept() => {
                 app_config.handle_metrics(metrics_listen_result, &graceful);
             },
-            Some(mut new_app_config) = config_reload.recv() => {
-                let mut new_listener = None;
-                if app_config.listen_addr() != new_app_config.listen_addr() {
-                    match new_app_config.listen().await {
-                        Ok(l) => new_listener = Some(l),
-                        Err(e) => {
-                            log::error!("Config reload encountered error: {e}");
-                            continue;
-                        }
-                    }
-                }
-                let mut new_metrics_listener = None;
-                if app_config.listen_metrics_addr() != new_app_config.listen_metrics_addr() {
-                    match new_app_config.listen_metrics().await {
-                        Ok(l) => new_metrics_listener = Some(l),
-                        Err(e) => {
-                            log::error!("Config reload encountered error: {e}");
-                            continue;
-                        }
-                    }
-                }
-
-                if let Some(l) = new_listener {
-                    listener = l;
-                }
-                if let Some(l) = new_metrics_listener {
-                    metrics_listener = l;
-                }
-                new_app_config.replace_metrics(&app_config);
-                app_config = new_app_config;
-
-                log::info!("Reloaded config");
+            Some(new_app_config) = config_reload.recv() => {
+                swap_configs(new_app_config, &mut app_config, &mut listener, &mut metrics_listener).await;
             },
             _ = sighup.recv() => {
                 reload_config(&config_path, &app_config, config_reload_tx.clone());
@@ -127,20 +100,6 @@ async fn main() {
 
     app_config.persist_metrics();
     log::info!("Shutdown");
-}
-
-fn config_path() -> Result<String, ()> {
-    let mut args = std::env::args().skip(1);
-    while args.len() > 0 {
-        match args.next().unwrap().to_lowercase().as_str() {
-            "-c" | "--config" => match args.next() {
-                Some(c) => return Ok(c),
-                None => return Err(()),
-            },
-            _arg => {}
-        }
-    }
-    Ok("./config.kdl".into())
 }
 
 fn usage() -> String {
@@ -182,4 +141,44 @@ fn reload_config(path: &str, existing: &AppConfig, tx: Sender<AppConfig>) {
             log::error!("Config reload encountered error: {e}");
         }),
     });
+}
+
+#[cfg(unix)]
+async fn swap_configs(
+    mut new_app_config: AppConfig,
+    app_config: &mut AppConfig,
+    listener: &mut TcpListener,
+    metrics_listener: &mut OptionalListener,
+) {
+    let mut new_listener = None;
+    if app_config.listen_addr() != new_app_config.listen_addr() {
+        match new_app_config.listen().await {
+            Ok(l) => new_listener = Some(l),
+            Err(e) => {
+                log::error!("Config reload encountered error: {e}");
+                return;
+            }
+        }
+    }
+    let mut new_metrics_listener = None;
+    if app_config.listen_metrics_addr() != new_app_config.listen_metrics_addr() {
+        match new_app_config.listen_metrics().await {
+            Ok(l) => new_metrics_listener = Some(l),
+            Err(e) => {
+                log::error!("Config reload encountered error: {e}");
+                return;
+            }
+        }
+    }
+
+    if let Some(l) = new_listener {
+        *listener = l;
+    }
+    if let Some(l) = new_metrics_listener {
+        *metrics_listener = l;
+    }
+    new_app_config.replace_metrics(&app_config);
+    *app_config = new_app_config;
+
+    log::info!("Reloaded config");
 }
