@@ -60,36 +60,5 @@ pub fn append_procfs_metrics(output_buffer: &mut String) {
                 MetricValue::Float((stat.utime + stat.stime) as f64 / *CLK_TICK),
             );
         }
-        if let Ok((fd_count, limits)) = p
-            .fd_count()
-            .and_then(|fd_count| p.limits().map(|limits| (fd_count, limits)))
-        {
-            append_metric_label(
-                output_buffer,
-                "fds",
-                "gauge",
-                "Number of open file descriptors",
-            );
-            append_metric_value(
-                output_buffer,
-                "fds",
-                &[MetricLabel(
-                    CompactString::const_new("fds"),
-                    CompactString::const_new("open"),
-                )],
-                MetricValue::Int(fd_count as i64),
-            );
-            if let procfs::process::LimitValue::Value(max) = limits.max_open_files.soft_limit {
-                append_metric_value(
-                    output_buffer,
-                    "fds",
-                    &[MetricLabel(
-                        CompactString::const_new("fds"),
-                        CompactString::const_new("max"),
-                    )],
-                    MetricValue::Int(max as i64),
-                );
-            }
-        }
     }
 }
