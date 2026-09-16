@@ -23,6 +23,7 @@ pub struct Metrics {
     request_counter: NamedHashMap,
     classification_spam_counter: NamedHashMap,
     classification_valid_counter: NamedHashMap,
+    trusted_agents_counter: NamedHashMap,
     asn_known_counter: NamedHashMap,
     asn_hidden_counter: NamedHashMap,
 
@@ -64,6 +65,17 @@ impl Metrics {
             .fetch_add(1, Ordering::Release);
     }
 
+    pub fn increment_trusted_agent(&mut self, labels: Vec<MetricLabel>) {
+        let key = MetricKey {
+            name: self.trusted_agents_counter.name.clone(),
+            labels,
+        };
+        self.trusted_agents_counter
+            .entry(key)
+            .or_insert(AtomicU64::new(0))
+            .fetch_add(1, Ordering::Release);
+    }
+
     pub fn increment_asn_known(&mut self, asn: u32) {
         let label = MetricLabel(CompactString::const_new("asn"), asn.to_compact_string());
         let key = MetricKey {
@@ -95,6 +107,7 @@ impl Metrics {
         append_metric(&mut output_buffer, &self.request_counter);
         append_metric(&mut output_buffer, &self.classification_spam_counter);
         append_metric(&mut output_buffer, &self.classification_valid_counter);
+        append_metric(&mut output_buffer, &self.trusted_agents_counter);
         append_metric(&mut output_buffer, &self.asn_known_counter);
         append_metric(&mut output_buffer, &self.asn_hidden_counter);
 
@@ -126,6 +139,10 @@ pub fn init(config: &Config) -> Arc<Mutex<Metrics>> {
             "classifications_valid",
             "Number of valid classifications",
         ),
+        trusted_agents_counter: NamedHashMap::new(
+            "trusted_agents",
+            "Number of requests by trusted user agents",
+        ),
         asn_known_counter: NamedHashMap::new("asns_known", "ASNs whence originate spam"),
         asn_hidden_counter: NamedHashMap::new("asns_hidden", "ASNs hiding spam"),
         persist_path: None,
@@ -155,13 +172,12 @@ pub fn init(config: &Config) -> Arc<Mutex<Metrics>> {
 }
 
 pub fn record_request(metrics: &Mutex<Metrics>, c: Classification) {
-    let mut labels = Vec::with_capacity(1);
-    if let Some(host) = c.host {
-        labels.push(MetricLabel(
-            CompactString::const_new("host"),
-            CompactString::from(host),
-        ));
-    }
+    let host_label = MetricLabel(
+        CompactString::const_new("host"),
+        CompactString::from(c.host.unwrap_or("N/A")),
+    );
+    let mut labels = Vec::with_capacity(2);
+    labels.push(host_label.clone());
     let mut metrics = metrics.lock().unwrap();
     metrics.increment_request(labels.clone());
     match c.decision {
@@ -187,12 +203,16 @@ pub fn record_request(metrics: &Mutex<Metrics>, c: Classification) {
                 ));
                 metrics.increment_classification_valid(labels);
             }
-            ValidReason::TrustedAgent(_) => {
+            ValidReason::TrustedAgent(agent) => {
                 labels.push(MetricLabel(
                     CompactString::const_new("reason"),
                     CompactString::const_new("trusted agent"),
                 ));
                 metrics.increment_classification_valid(labels);
+                metrics.increment_trusted_agent(vec![
+                    host_label,
+                    MetricLabel(CompactString::const_new("agent"), CompactString::new(agent)),
+                ]);
             }
             ValidReason::TrustedDecision => {}
         },
@@ -207,15 +227,13 @@ pub fn record_request(metrics: &Mutex<Metrics>, c: Classification) {
                     metrics.increment_asn_hidden(asn);
                 }
             }
-            SpamReason::UnwantedASN(_) => {
+            SpamReason::UnwantedASN(asn) => {
                 labels.push(MetricLabel(
                     CompactString::const_new("reason"),
                     CompactString::const_new("unwanted ASN"),
                 ));
                 metrics.increment_classification_spam(labels);
-                if let Some(asn) = c.asn {
-                    metrics.increment_asn_known(asn);
-                }
+                metrics.increment_asn_known(asn);
             }
             SpamReason::UnwantedAgent(_) => {
                 labels.push(MetricLabel(
