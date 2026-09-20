@@ -12,7 +12,7 @@ use std::{
 };
 
 type BodyType = Response<String>;
-type HandlerOutput<'r> = (Classification<'r>, BodyType);
+type HandlerOutput<'r> = (Option<Classification<'r>>, BodyType);
 type ServiceFuture = Pin<Box<dyn Future<Output = Result<BodyType, hyper::Error>> + Send>>;
 pub type HandlerType = for<'r> fn(&PslHandler, &'r Request<IncomingBody>) -> HandlerOutput<'r>;
 
@@ -57,25 +57,40 @@ impl Service<Request<IncomingBody>> for PslHandler {
         let now = Instant::now();
         let (classification, resp) = (self.handler)(self, &req);
         let elapsed = now.elapsed().as_millis();
-        if self.logging {
-            log::info!(
-                host = classification.host,
-                path = request_path(&req),
-                status = resp.status().as_u16(),
-                elapsed_ms = elapsed,
-                client_ip = classification.remote_ip,
-                asn = classification.asn,
-                poison = classification.poison,
-                user_agent = classification.agent;
-                "Response {} {} {}ms {}",
-                request_path(&req),
-                resp.status().as_u16(),
-                elapsed,
-                classification.decision,
-            );
+        match classification {
+            Some(classification) => {
+                if self.logging {
+                    log::info!(
+                        host = classification.host,
+                        path = request_path(&req),
+                        status = resp.status().as_u16(),
+                        elapsed_ms = elapsed,
+                        client_ip = classification.remote_ip,
+                        asn = classification.asn,
+                        poison = classification.poison,
+                        user_agent = classification.agent;
+                        "Response {} {} {}ms {}",
+                        request_path(&req),
+                        resp.status().as_u16(),
+                        elapsed,
+                        classification.decision,
+                    );
+                }
+                // TODO: don't do this if metrics are disabled
+                record_request(&self.metrics, classification);
+            }
+            None => {
+                if self.logging {
+                    log::info!(
+                        "Response {} {} {}ms {}",
+                        request_path(&req),
+                        resp.status().as_u16(),
+                        elapsed,
+                        "spam fated victim"
+                    );
+                }
+            }
         }
-        // TODO: don't do this if metrics are disabled
-        record_request(&self.metrics, classification);
         Box::pin(async { Ok(resp) })
     }
 }
@@ -85,9 +100,12 @@ pub fn proxy<'r>(app: &PslHandler, req: &'r Request<IncomingBody>) -> HandlerOut
     match classification.decision {
         Decision::Valid(_) => {
             let resp = empty_response(app.status_code_valid);
-            (classification, resp)
+            (Some(classification), resp)
         }
-        Decision::Spam(_) => (classification, app.garbage_response(&req)),
+        Decision::Spam(_) => {
+            let resp = app.garbage_response(&req);
+            (Some(classification), resp)
+        }
     }
 }
 
@@ -95,7 +113,7 @@ pub fn preflight<'r>(app: &PslHandler, req: &'r Request<IncomingBody>) -> Handle
     if let Some(classification) = app.classifier.trusted_decision(&req) {
         if let Decision::Spam(_) = classification.decision {
             let resp = app.garbage_response(&req);
-            return (classification, resp);
+            return (None, resp);
         }
     }
 
@@ -106,7 +124,7 @@ pub fn preflight<'r>(app: &PslHandler, req: &'r Request<IncomingBody>) -> Handle
     };
 
     let resp = empty_response(preflight_status);
-    (classification, resp)
+    (Some(classification), resp)
 }
 
 fn empty_response(status_code: StatusCode) -> BodyType {
