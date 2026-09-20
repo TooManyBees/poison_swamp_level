@@ -47,7 +47,7 @@ impl AppConfig {
         self.metrics = other.metrics.clone();
     }
 
-    pub fn to_service(&self, client_ip: IpAddr) -> PslHandler {
+    pub fn to_service(&self, client_ip: Option<IpAddr>) -> PslHandler {
         PslHandler {
             client_ip,
             classifier: self.classifier.clone(),
@@ -117,7 +117,7 @@ impl AppConfig {
         match result {
             Ok((stream, addr)) => {
                 let io = TokioIo::new(stream);
-                let app = self.to_service(addr.ip());
+                let app = self.to_service(Some(addr.ip()));
                 let conn = http1::Builder::new().serve_connection(io, app);
                 let fut = graceful.watch(conn);
                 tokio::task::spawn(async move {

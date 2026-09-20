@@ -6,6 +6,7 @@ use hyper::{Request, Response, StatusCode, body::Incoming as IncomingBody};
 use std::{
     net::IpAddr,
     pin::Pin,
+    str::FromStr,
     sync::{Arc, Mutex},
     time::Instant,
 };
@@ -17,7 +18,7 @@ pub type HandlerType = for<'r> fn(&PslHandler, &'r Request<IncomingBody>) -> Han
 
 #[derive(Debug, Clone)]
 pub struct PslHandler {
-    pub client_ip: IpAddr,
+    pub client_ip: Option<IpAddr>,
     pub classifier: Arc<Classifier>,
     pub garbage: Arc<Garbage>,
     pub handler: HandlerType,
@@ -44,7 +45,15 @@ impl Service<Request<IncomingBody>> for PslHandler {
     type Future = ServiceFuture;
 
     fn call(&self, mut req: Request<IncomingBody>) -> Self::Future {
-        req.extensions_mut().insert(self.client_ip);
+        let client_ip = req
+            .headers()
+            .get("x-forwarded-for")
+            // At some point we should be able to IpAddr::parse_ascii or something
+            // https://github.com/rust-lang/rust/issues/101035
+            .and_then(|v| v.to_str().ok())
+            .and_then(|v| IpAddr::from_str(v).ok())
+            .or(self.client_ip);
+        req.extensions_mut().insert(client_ip);
         let now = Instant::now();
         let (classification, resp) = (self.handler)(self, &req);
         let elapsed = now.elapsed().as_millis();
