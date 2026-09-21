@@ -1,8 +1,8 @@
+use super::listeners::{Address, Listener, OptionalListener, Stream};
 use crate::classifier::Classifier;
 use crate::config::{Config, ServerMode};
 use crate::garbage::Garbage;
 use crate::metrics::{Metrics, init as init_metrics};
-use crate::service::OptionalListener;
 use crate::service::handler::{HandlerType, MetricsHandler, PslHandler, preflight, proxy};
 use hyper::server::conn::http1;
 use hyper_util::rt::TokioIo;
@@ -10,10 +10,9 @@ use hyper_util::server::graceful::GracefulShutdown;
 use std::{
     error::Error,
     io,
-    net::{IpAddr, SocketAddr},
+    net::IpAddr,
     sync::{Arc, Mutex},
 };
-use tokio::net::{TcpListener, TcpStream};
 
 pub struct AppConfig {
     config: Config,
@@ -66,20 +65,20 @@ impl AppConfig {
         }
     }
 
-    pub fn listen_addr(&self) -> SocketAddr {
-        self.config.server.listen
+    pub fn listen_addr(&self) -> &Address {
+        &self.config.server.listen
     }
 
-    pub fn listen_metrics_addr(&self) -> Option<SocketAddr> {
-        self.config.metrics.as_ref().map(|metrics| metrics.listen)
+    pub fn listen_metrics_addr(&self) -> Option<&Address> {
+        self.config.metrics.as_ref().map(|metrics| &metrics.listen)
     }
 
     pub fn same_as(&self, other: &Config) -> bool {
         self.config == *other
     }
 
-    pub async fn listen(&self) -> io::Result<TcpListener> {
-        match TcpListener::bind(self.listen_addr()).await {
+    pub async fn listen(&self) -> io::Result<Listener> {
+        match Listener::bind(self.listen_addr()).await {
             Ok(l) => {
                 log::info!("Listening on {}", self.listen_addr());
                 Ok(l)
@@ -97,7 +96,7 @@ impl AppConfig {
             Some(addr) => addr,
         };
 
-        match TcpListener::bind(addr).await {
+        match Listener::bind(addr).await {
             Ok(l) => {
                 log::info!("Metrics listening on {}", addr);
                 Ok(OptionalListener::Some(l))
@@ -109,15 +108,11 @@ impl AppConfig {
         }
     }
 
-    pub fn handle_connection(
-        &self,
-        result: io::Result<(TcpStream, SocketAddr)>,
-        graceful: &GracefulShutdown,
-    ) {
+    pub fn handle_connection(&self, result: io::Result<Stream>, graceful: &GracefulShutdown) {
         match result {
-            Ok((stream, addr)) => {
+            Ok(stream) => {
+                let app = self.to_service(stream.client_ip());
                 let io = TokioIo::new(stream);
-                let app = self.to_service(Some(addr.ip()));
                 let conn = http1::Builder::new().serve_connection(io, app);
                 let fut = graceful.watch(conn);
                 tokio::task::spawn(async move {
@@ -130,13 +125,9 @@ impl AppConfig {
         }
     }
 
-    pub fn handle_metrics(
-        &self,
-        result: io::Result<(TcpStream, SocketAddr)>,
-        graceful: &GracefulShutdown,
-    ) {
+    pub fn handle_metrics(&self, result: io::Result<Stream>, graceful: &GracefulShutdown) {
         match result {
-            Ok((stream, _addr)) => {
+            Ok(stream) => {
                 let io = TokioIo::new(stream);
                 let app = self.to_metric_service();
                 let conn = http1::Builder::new().serve_connection(io, app);

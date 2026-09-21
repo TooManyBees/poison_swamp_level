@@ -1,14 +1,13 @@
 use hyper_util::server::graceful::GracefulShutdown;
 use poison_swamp_level::service::AppConfig;
 #[cfg(unix)]
-use poison_swamp_level::service::OptionalListener;
+use poison_swamp_level::service::{Listener, OptionalListener};
 use poison_swamp_level::{Config, config_path, init_logger};
 use std::io::{self, IsTerminal};
 use std::time::Duration;
 use tokio::time::sleep;
 #[cfg(unix)]
 use tokio::{
-    net::TcpListener,
     signal::ctrl_c,
     signal::unix::{SignalKind, signal},
     sync::{mpsc, mpsc::Sender},
@@ -147,7 +146,7 @@ fn reload_config(path: &str, existing: &AppConfig, tx: Sender<AppConfig>) {
 async fn swap_configs(
     mut new_app_config: AppConfig,
     app_config: &mut AppConfig,
-    listener: &mut TcpListener,
+    listener: &mut Listener,
     metrics_listener: &mut OptionalListener,
 ) {
     let mut new_listener = None;

@@ -2,6 +2,7 @@ use super::ParseError;
 use super::config::{
     Classifier, Config, Garbage, Links, LogTarget, Logging, Metrics, Server, ServerMode,
 };
+use crate::service::Address;
 use http::header::HeaderName;
 use http::status::StatusCode;
 use kdl::{KdlDocument, KdlEntry, KdlNode};
@@ -48,6 +49,8 @@ fn parse_doc(doc: KdlDocument) -> Result<Config, ParseError> {
     Ok(config)
 }
 
+const INVALID_SOCKET_MESSAGE: &'static str = "socket address must be an IP address and port in the format \"0.0.0.0:1234\" or \"[::]:5678\", or a Unix socket URL in the format \"unix:/path/to/socket.sock\"";
+
 fn parse_server(node: &KdlNode) -> Result<Server, ParseError> {
     let mut server = Server::default();
 
@@ -67,10 +70,8 @@ fn parse_server(node: &KdlNode) -> Result<Server, ParseError> {
         match child.name().value() {
             "listen" => {
                 let entry = child.one_string_entry()?;
-                server.listen = entry
-                    .as_ref()
-                    .parse()
-                    .map_err(|_| ParseError::from_entry(&entry, "invalid socket address".into()))?;
+                server.listen = Address::from_str(entry.as_ref())
+                    .map_err(|_| ParseError::from_entry(&entry, INVALID_SOCKET_MESSAGE.into()))?;
             }
             "status-codes" => {
                 if let Some((entry, status)) = child.int_prop_with_entry::<u16>("valid")? {
@@ -263,10 +264,8 @@ fn parse_metrics(node: &KdlNode) -> Result<Metrics, ParseError> {
         match child.name().value() {
             "listen" => {
                 let entry = child.one_string_entry()?;
-                metrics.listen = entry
-                    .as_ref()
-                    .parse()
-                    .map_err(|_| ParseError::from_entry(&entry, "invalid socket address".into()))?;
+                metrics.listen = Address::from_str(entry.as_ref())
+                    .map_err(|_| ParseError::from_entry(&entry, INVALID_SOCKET_MESSAGE.into()))?;
             }
             "persist-path" => {
                 metrics.persist_path = Some(child.one_string_arg()?);

@@ -3,4 +3,4 @@ mod handler;
 mod listeners;
 
 pub use app_config::AppConfig;
-pub use listeners::OptionalListener;
+pub use listeners::{Address, Listener, OptionalListener};

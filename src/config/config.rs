@@ -1,4 +1,5 @@
 use super::{ParseError, load_config};
+use crate::service::Address;
 use http::StatusCode;
 use http::header::HeaderName;
 use log::LevelFilter;
@@ -106,7 +107,7 @@ impl Default for Links {
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct Server {
-    pub listen: SocketAddr,
+    pub listen: Address,
     pub mode: ServerMode,
     pub status_code_valid: StatusCode,
     pub status_code_spam: StatusCode,
@@ -115,7 +116,10 @@ pub struct Server {
 impl Default for Server {
     fn default() -> Self {
         Server {
-            listen: SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::new(127, 0, 0, 1), 4000)),
+            listen: Address::TcpSocket(SocketAddr::V4(SocketAddrV4::new(
+                Ipv4Addr::new(127, 0, 0, 1),
+                4000,
+            ))),
             mode: ServerMode::Preflight,
             status_code_valid: StatusCode::OK,
             status_code_spam: StatusCode::UNAUTHORIZED,
@@ -158,14 +162,17 @@ pub enum LogTarget {
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct Metrics {
-    pub listen: SocketAddr,
+    pub listen: Address,
     pub persist_path: Option<String>,
 }
 
 impl Default for Metrics {
     fn default() -> Metrics {
         Metrics {
-            listen: SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::new(127, 0, 0, 1), 4001)),
+            listen: Address::TcpSocket(SocketAddr::V4(SocketAddrV4::new(
+                Ipv4Addr::new(127, 0, 0, 1),
+                4001,
+            ))),
             persist_path: None,
         }
     }
