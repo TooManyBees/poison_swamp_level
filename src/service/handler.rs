@@ -45,14 +45,7 @@ impl Service<Request<IncomingBody>> for PslHandler {
     type Future = ServiceFuture;
 
     fn call(&self, mut req: Request<IncomingBody>) -> Self::Future {
-        let client_ip = req
-            .headers()
-            .get("x-forwarded-for")
-            // At some point we should be able to IpAddr::parse_ascii or something
-            // https://github.com/rust-lang/rust/issues/101035
-            .and_then(|v| v.to_str().ok())
-            .and_then(|v| IpAddr::from_str(v).ok())
-            .or(self.client_ip);
+        let client_ip = x_real_ip(&req).or(x_forwarded_for(&req)).or(self.client_ip);
         req.extensions_mut().insert(client_ip);
         let now = Instant::now();
         let (classification, resp) = (self.handler)(self, &req);
@@ -139,6 +132,23 @@ fn request_path<B>(req: &Request<B>) -> &str {
         .path_and_query()
         .map(|pq| pq.as_str())
         .unwrap_or("/")
+}
+
+fn x_real_ip<B>(req: &Request<B>) -> Option<IpAddr> {
+    req.headers()
+        .get("x-real-ip")
+        // At some point we should be able to IpAddr::parse_ascii or something
+        // https://github.com/rust-lang/rust/issues/101035
+        .and_then(|v| v.to_str().ok())
+        .and_then(|v| IpAddr::from_str(v).ok())
+}
+
+fn x_forwarded_for<B>(req: &Request<B>) -> Option<IpAddr> {
+    req.headers()
+        .get("x-forwarded-for")
+        .and_then(|v| v.to_str().ok())
+        .and_then(|v| v.split_ascii_whitespace().nth(0))
+        .and_then(|v| IpAddr::from_str(v).ok())
 }
 
 #[derive(Debug, Clone)]
