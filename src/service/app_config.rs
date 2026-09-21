@@ -2,7 +2,7 @@ use super::listeners::{Address, Listener, OptionalListener, Stream};
 use crate::classifier::Classifier;
 use crate::config::{Config, ServerMode};
 use crate::garbage::Garbage;
-use crate::metrics::{Metrics, init as init_metrics};
+use crate::metrics::{Metrics, init_metrics};
 use crate::service::handler::{HandlerType, MetricsHandler, PslHandler, preflight, proxy};
 use hyper::server::conn::http1;
 use hyper_util::rt::TokioIo;

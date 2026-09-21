@@ -128,7 +128,7 @@ impl Metrics {
     }
 }
 
-pub fn init(config: &Config) -> Arc<Mutex<Metrics>> {
+pub fn init_metrics(config: &Config) -> Arc<Mutex<Metrics>> {
     let mut metrics = Metrics {
         request_counter: NamedHashMap::new("requests", "Number of requests"),
         classification_spam_counter: NamedHashMap::new(

@@ -1,8 +1,12 @@
 use crate::classifier::{Classification, Classifier, Decision};
 use crate::garbage::Garbage;
 use crate::metrics::{Metrics, record_request};
+use http::{
+    StatusCode,
+    header::{CACHE_CONTROL, HeaderValue},
+};
 use hyper::service::Service;
-use hyper::{Request, Response, StatusCode, body::Incoming as IncomingBody};
+use hyper::{Request, Response, body::Incoming as IncomingBody};
 use std::{
     net::IpAddr,
     pin::Pin,
@@ -22,8 +26,8 @@ pub struct PslHandler {
     pub classifier: Arc<Classifier>,
     pub garbage: Arc<Garbage>,
     pub handler: HandlerType,
-    pub status_code_valid: http::StatusCode,
-    pub status_code_spam: http::StatusCode,
+    pub status_code_valid: StatusCode,
+    pub status_code_spam: StatusCode,
     pub logging: bool,
     pub metrics: Arc<Mutex<Metrics>>,
 }
@@ -34,6 +38,10 @@ impl PslHandler {
         let body = self.garbage.render(path);
         Response::builder()
             .status(StatusCode::OK)
+            .header(
+                CACHE_CONTROL,
+                HeaderValue::from_static("private, max-age=604800, immutable"),
+            )
             .body(body)
             .unwrap()
     }
@@ -84,6 +92,7 @@ impl Service<Request<IncomingBody>> for PslHandler {
                 }
             }
         }
+
         Box::pin(async { Ok(resp) })
     }
 }
