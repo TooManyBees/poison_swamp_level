@@ -8,8 +8,9 @@ use http::{
 use hyper::service::Service;
 use hyper::{Request, Response, body::Incoming as IncomingBody};
 use std::{
+    convert::Infallible,
+    future::{Ready, ready},
     net::IpAddr,
-    pin::Pin,
     str::FromStr,
     sync::{Arc, Mutex},
     time::Instant,
@@ -17,7 +18,7 @@ use std::{
 
 type BodyType = Response<String>;
 type HandlerOutput<'r> = (Option<Classification<'r>>, BodyType);
-type ServiceFuture = Pin<Box<dyn Future<Output = Result<BodyType, hyper::Error>> + Send>>;
+type ServiceFuture = Ready<Result<BodyType, Infallible>>;
 pub type HandlerType = for<'r> fn(&PslHandler, &'r Request<IncomingBody>) -> HandlerOutput<'r>;
 
 #[derive(Debug, Clone)]
@@ -49,7 +50,7 @@ impl PslHandler {
 
 impl Service<Request<IncomingBody>> for PslHandler {
     type Response = BodyType;
-    type Error = hyper::Error;
+    type Error = Infallible;
     type Future = ServiceFuture;
 
     fn call(&self, mut req: Request<IncomingBody>) -> Self::Future {
@@ -93,7 +94,7 @@ impl Service<Request<IncomingBody>> for PslHandler {
             }
         }
 
-        Box::pin(async { Ok(resp) })
+        ready(Ok(resp))
     }
 }
 
@@ -167,7 +168,7 @@ pub struct MetricsHandler {
 
 impl Service<Request<IncomingBody>> for MetricsHandler {
     type Response = BodyType;
-    type Error = hyper::Error;
+    type Error = Infallible;
     type Future = ServiceFuture;
 
     fn call(&self, _req: Request<IncomingBody>) -> Self::Future {
@@ -181,6 +182,6 @@ impl Service<Request<IncomingBody>> for MetricsHandler {
             .body(output)
             .unwrap();
 
-        Box::pin(async { Ok(resp) })
+        ready(Ok(resp))
     }
 }
