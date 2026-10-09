@@ -32,7 +32,7 @@ pub struct Metrics {
 }
 
 impl Metrics {
-    pub fn increment_request(&mut self, labels: Vec<MetricLabel>) {
+    fn increment_request(&mut self, labels: Vec<MetricLabel>) {
         let key = MetricKey {
             name: self.request_counter.name.clone(),
             labels,
@@ -43,7 +43,7 @@ impl Metrics {
             .fetch_add(1, Ordering::Release);
     }
 
-    pub fn increment_classification_spam(&mut self, labels: Vec<MetricLabel>) {
+    fn increment_classification_spam(&mut self, labels: Vec<MetricLabel>) {
         let key = MetricKey {
             name: self.classification_spam_counter.name.clone(),
             labels,
@@ -54,7 +54,7 @@ impl Metrics {
             .fetch_add(1, Ordering::Release);
     }
 
-    pub fn increment_classification_valid(&mut self, labels: Vec<MetricLabel>) {
+    fn increment_classification_valid(&mut self, labels: Vec<MetricLabel>) {
         let key = MetricKey {
             name: self.classification_valid_counter.name.clone(),
             labels,
@@ -65,7 +65,7 @@ impl Metrics {
             .fetch_add(1, Ordering::Release);
     }
 
-    pub fn increment_trusted_agent(&mut self, labels: Vec<MetricLabel>) {
+    fn increment_trusted_agent(&mut self, labels: Vec<MetricLabel>) {
         let key = MetricKey {
             name: self.trusted_agents_counter.name.clone(),
             labels,
@@ -76,7 +76,7 @@ impl Metrics {
             .fetch_add(1, Ordering::Release);
     }
 
-    pub fn increment_asn_known(&mut self, asn: u32) {
+    fn increment_asn_known(&mut self, asn: u32) {
         let label = MetricLabel(CompactString::const_new("asn"), asn.to_compact_string());
         let key = MetricKey {
             name: self.asn_known_counter.name.clone(),
@@ -88,7 +88,7 @@ impl Metrics {
             .fetch_add(1, Ordering::Release);
     }
 
-    pub fn increment_asn_hidden(&mut self, asn: u32) {
+    fn increment_asn_hidden(&mut self, asn: u32) {
         let label = MetricLabel(CompactString::const_new("asn"), asn.to_compact_string());
         let key = MetricKey {
             name: self.asn_hidden_counter.name.clone(),
