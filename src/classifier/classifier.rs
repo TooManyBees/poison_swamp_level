@@ -132,6 +132,19 @@ impl Classifier {
         None
     }
 
+    fn poisoned_resource<B>(&self, req: &Request<B>) -> Option<&'static str> {
+        let path = req.uri().path();
+        if let Some((_, last_segment)) = path.rsplit_once('/') {
+            match last_segment.rsplit_once('.') {
+                Some((_, "css")) => Some("css"),
+                Some((_, "js")) => Some("js"),
+                _ => None,
+            }
+        } else {
+            None
+        }
+    }
+
     fn lookup_asn(
         db: &maxminddb::Reader<Vec<u8>>,
         ip: IpAddr,
@@ -199,7 +212,8 @@ impl Classifier {
         }
 
         if let Some(poison) = info.poison {
-            info.decision = Decision::Spam(SpamReason::Poison(poison));
+            let extension = self.poisoned_resource(req);
+            info.decision = Decision::Spam(SpamReason::Poison(poison, extension));
             return info;
         }
 
@@ -258,7 +272,7 @@ pub enum ValidReason<'a> {
 
 #[derive(Debug)]
 pub enum SpamReason<'a> {
-    Poison(&'a str),
+    Poison(&'a str, Option<&'static str>),
     UnwantedASN(u32),
     UnwantedAgent(&'a str),
     TrustedDecision,
@@ -279,7 +293,8 @@ impl<'a> fmt::Display for ValidReason<'a> {
 impl<'a> fmt::Display for SpamReason<'a> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            SpamReason::Poison(p) => write!(f, "poison {p:?}"),
+            SpamReason::Poison(_, Some(e)) => write!(f, "poisoned resource {e:?}"),
+            SpamReason::Poison(p, None) => write!(f, "poison {p:?}"),
             SpamReason::UnwantedASN(asn) => write!(f, "unwanted ASN {asn}"),
             SpamReason::UnwantedAgent(agent) => write!(f, "unwanted agent {agent:?}"),
             SpamReason::TrustedDecision => f.write_str("trusted decision header"),

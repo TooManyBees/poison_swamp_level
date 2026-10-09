@@ -217,7 +217,7 @@ pub fn record_request(metrics: &Mutex<Metrics>, c: Classification) {
             ValidReason::TrustedDecision => {}
         },
         Decision::Spam(reason) => match reason {
-            SpamReason::Poison(_) => {
+            SpamReason::Poison(_, _) => {
                 labels.push(MetricLabel(
                     CompactString::const_new("reason"),
                     CompactString::const_new("poison"),
