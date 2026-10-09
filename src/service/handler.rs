@@ -40,9 +40,9 @@ impl PslHandler {
         let body = self.garbage.render(path);
 
         let content_type = match http_path_extname(path) {
-            Some("css") => "text/css",
-            Some("js") => "text/javascript",
-            _ => "text/html",
+            Some("css") => "text/css; charset=utf-8",
+            Some("js") => "text/javascript; charset=utf-8",
+            _ => "text/html; charset=utf-8",
         };
 
         Response::builder()
