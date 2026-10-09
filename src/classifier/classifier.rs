@@ -1,5 +1,6 @@
 use super::matcher::Matcher;
 use super::robots_json::{RobotsJsonError, load_robots_json};
+use crate::http_path_extname;
 use crate::config::Config;
 use aho_corasick::BuildError;
 use http::{
@@ -133,15 +134,10 @@ impl Classifier {
     }
 
     fn poisoned_resource<B>(&self, req: &Request<B>) -> Option<&'static str> {
-        let path = req.uri().path();
-        if let Some((_, last_segment)) = path.rsplit_once('/') {
-            match last_segment.rsplit_once('.') {
-                Some((_, "css")) => Some("css"),
-                Some((_, "js")) => Some("js"),
-                _ => None,
-            }
-        } else {
-            None
+        match http_path_extname(req.uri().path()) {
+            Some("css") => Some("css"),
+            Some("js") => Some("js"),
+            _ => None,
         }
     }
 

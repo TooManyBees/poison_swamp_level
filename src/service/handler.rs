@@ -1,9 +1,10 @@
 use crate::classifier::{Classification, Classifier, Decision};
 use crate::garbage::Garbage;
+use crate::http_path_extname;
 use crate::metrics::{Metrics, record_request};
 use http::{
     StatusCode,
-    header::{CACHE_CONTROL, HeaderValue},
+    header::{CACHE_CONTROL, CONTENT_TYPE, HeaderValue},
 };
 use hyper::service::Service;
 use hyper::{Request, Response, body::Incoming as IncomingBody};
@@ -37,12 +38,20 @@ impl PslHandler {
     fn garbage_response<B>(&self, req: &Request<B>) -> Response<String> {
         let path = request_path(&req);
         let body = self.garbage.render(path);
+
+        let content_type = match http_path_extname(path) {
+            Some("css") => "text/css",
+            Some("js") => "text/javascript",
+            _ => "text/html",
+        };
+
         Response::builder()
             .status(StatusCode::OK)
             .header(
                 CACHE_CONTROL,
                 HeaderValue::from_static("private, max-age=604800, immutable"),
             )
+            .header(CONTENT_TYPE, HeaderValue::from_static(content_type))
             .body(body)
             .unwrap()
     }
