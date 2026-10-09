@@ -1,11 +1,12 @@
 use super::matcher::Matcher;
 use super::robots_json::{RobotsJsonError, load_robots_json};
-use crate::http_path_extname;
 use crate::config::Config;
+use crate::http_path_extname;
 use aho_corasick::BuildError;
+use compact_str::CompactString;
 use http::{
     Request,
-    header::{HOST, HeaderName, USER_AGENT},
+    header::{ACCEPT, HOST, HeaderName, USER_AGENT},
 };
 use maxminddb::{MaxMindDbError, Reader, geoip2::Asn};
 use std::fmt;
@@ -181,6 +182,7 @@ impl Classifier {
             poison: self.poisoned_path(req),
             asn: self.asn(req),
             agent: req.headers().get(USER_AGENT).and_then(|h| h.to_str().ok()),
+            accept: req.headers().get(ACCEPT).and_then(|h| h.to_str().ok()),
             decision: Decision::Valid(ValidReason::Default),
             resource_type: resource_type(req),
         };
@@ -276,6 +278,7 @@ pub struct Classification<'a> {
     pub host: Option<&'a str>,
     pub remote_ip: Option<IpAddr>,
     pub agent: Option<&'a str>,
+    pub accept: Option<&'a str>,
     pub asn: Option<u32>,
     pub poison: Option<&'a str>,
     pub decision: Decision<'a>,

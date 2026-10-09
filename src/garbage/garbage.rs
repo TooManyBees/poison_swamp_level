@@ -1,6 +1,6 @@
 use super::generator::Corpus;
 use super::read_text::ParseError;
-use crate::Config;
+use crate::{Config, classifier::FETCH_PATH, http_path_extname};
 use rand::{Rng, RngExt, seq::IndexedRandom};
 use rand_seeder::{Seeder, SipRng};
 use std::collections::BTreeMap;
@@ -89,6 +89,9 @@ impl Garbage {
     }
 
     fn generate_links<R: Rng>(&self, path: &str, rng: &mut R) -> Value {
+        if self.poisons.is_empty() {
+            return Value::None;
+        }
         let num_links = rng.random_range(self.num_links.clone());
         let mut links = Vec::with_capacity(num_links);
         for _ in 0..num_links {
@@ -118,7 +121,34 @@ impl Garbage {
         Value::List(links)
     }
 
+    fn generate_resource_link<R: Rng>(&self, path: &str, ext: &str, rng: &mut R) -> Value {
+        if self.poisons.iter().any(|p| path.contains(p)) {
+            return Value::None;
+        }
+        if let Some(poison) = self.poisons.choose(rng) {
+            let mut link_path = if path.ends_with('/') {
+                format!("{path}{poison}")
+            } else {
+                format!("{path}/{poison}")
+            };
+            let num_words = rng.random_range(self.num_link_words.clone());
+            for segment in self.words.sample(rng, num_words) {
+                link_path.push(self.link_separator);
+                link_path.push_str(segment);
+            }
+            link_path.push_str(ext);
+            Value::String(link_path)
+        } else {
+            Value::None
+        }
+    }
+
     pub fn render(&self, path: &str) -> String {
+        match http_path_extname(path) {
+            Some("css") => return "body { background-color: bisque; }\n".into(),
+            Some("js") => return format!("fetch('{FETCH_PATH}');\n").into(),
+            Some("html") | Some("htm") | Some(_) | None => {}
+        }
         let mut rng: SipRng = Seeder::from(path).into_rng();
         let mut generator = self.corpus.generator(&mut rng);
 
@@ -128,7 +158,7 @@ impl Garbage {
             .collect();
 
         let is_poisoned = self.poisons.iter().any(|p| path.contains(p));
-        let links = if !self.poisons.is_empty() && !is_poisoned {
+        let links = if !is_poisoned {
             self.generate_links(path, generator.rng())
         } else {
             Value::None
@@ -143,6 +173,14 @@ impl Garbage {
             ("title".into(), title.into()),
             ("paragraphs".into(), Value::List(paragraphs)),
             ("links".into(), links),
+            (
+                "link_css".into(),
+                self.generate_resource_link(path, ".css", generator.rng()),
+            ),
+            (
+                "link_js".into(),
+                self.generate_resource_link(path, ".js", generator.rng()),
+            ),
         ]));
         let renderer = self.template.render_from(&self.engine, &data);
         renderer.to_string().expect("can't render template")

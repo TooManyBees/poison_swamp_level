@@ -4,7 +4,7 @@ mod persistence;
 mod procfs;
 mod structures;
 
-use crate::classifier::{Classification, Decision, SpamReason, ValidReason};
+use crate::classifier::{Classification, Decision, ResourceType, SpamReason, ValidReason};
 use crate::config::Config;
 use compact_str::{CompactString, ToCompactString};
 use format::append_metric;
@@ -26,6 +26,7 @@ pub struct Metrics {
     trusted_agents_counter: NamedHashMap,
     asn_known_counter: NamedHashMap,
     asn_hidden_counter: NamedHashMap,
+    accept_header: NamedHashMap,
 
     persist_path: Option<String>,
     output_buffer: String,
@@ -100,6 +101,36 @@ impl Metrics {
             .fetch_add(1, Ordering::Release);
     }
 
+    fn increment_accept(&mut self, extname: ResourceType, accept: Option<&str>) {
+        let type_label = MetricLabel(
+            CompactString::const_new("type"),
+            extname.to_compact_string(),
+        );
+        let accept_str = match accept {
+            None => CompactString::const_new("none"),
+            Some(accept) => {
+                let mut accept_str = String::with_capacity(accept.len());
+                for (n, s) in accept.split(',').enumerate() {
+                    let mime_type = s.split_once(';').map(|(kind, _)| kind).unwrap_or(s);
+                    if n > 0 {
+                        accept_str.push(',');
+                    }
+                    accept_str.push_str(mime_type);
+                }
+                accept_str.to_compact_string()
+            }
+        };
+        let accept_label = MetricLabel(CompactString::const_new("accept"), accept_str);
+        let key = MetricKey {
+            name: self.accept_header.name.clone(),
+            labels: vec![type_label, accept_label],
+        };
+        self.accept_header
+            .entry(key)
+            .or_insert(AtomicU64::new(0))
+            .fetch_add(1, Ordering::Release);
+    }
+
     pub fn to_prometheus(&mut self) -> String {
         let mut output_buffer = take(&mut self.output_buffer);
         output_buffer.clear();
@@ -110,6 +141,7 @@ impl Metrics {
         append_metric(&mut output_buffer, &self.trusted_agents_counter);
         append_metric(&mut output_buffer, &self.asn_known_counter);
         append_metric(&mut output_buffer, &self.asn_hidden_counter);
+        append_metric(&mut output_buffer, &self.accept_header);
 
         #[cfg(target_os = "linux")]
         append_procfs_metrics(&mut output_buffer);
@@ -145,6 +177,7 @@ pub fn init_metrics(config: &Config) -> Arc<Mutex<Metrics>> {
         ),
         asn_known_counter: NamedHashMap::new("asns_known", "ASNs whence originate spam"),
         asn_hidden_counter: NamedHashMap::new("asns_hidden", "ASNs hiding spam"),
+        accept_header: NamedHashMap::new("accept_header", "Accept headers by MIME types"),
         persist_path: None,
         output_buffer: String::new(),
     };
@@ -223,6 +256,7 @@ pub fn record_request(metrics: &Mutex<Metrics>, c: Classification) {
                     CompactString::const_new("poison"),
                 ));
                 metrics.increment_classification_spam(labels);
+                metrics.increment_accept(c.resource_type, c.accept);
                 if let Some(asn) = c.asn {
                     metrics.increment_asn_hidden(asn);
                 }
@@ -233,6 +267,7 @@ pub fn record_request(metrics: &Mutex<Metrics>, c: Classification) {
                     CompactString::const_new("unwanted ASN"),
                 ));
                 metrics.increment_classification_spam(labels);
+                metrics.increment_accept(c.resource_type, c.accept);
                 metrics.increment_asn_known(asn);
             }
             SpamReason::UnwantedAgent(_) => {
@@ -241,6 +276,7 @@ pub fn record_request(metrics: &Mutex<Metrics>, c: Classification) {
                     CompactString::const_new("unwanted agent"),
                 ));
                 metrics.increment_classification_spam(labels);
+                metrics.increment_accept(c.resource_type, c.accept);
                 if let Some(asn) = c.asn {
                     metrics.increment_asn_known(asn);
                 }
