@@ -26,6 +26,8 @@ pub struct Classifier {
     trusted_agents: Option<Matcher>,
 }
 
+pub static FETCH_PATH: &str = "/.well-known/psl-fetch";
+
 impl Classifier {
     pub fn new(config: &Config) -> Result<Self, ClassifierError> {
         let asns_db = if let Some(path) = config.classifier.asns_db_path.as_ref() {
@@ -180,6 +182,7 @@ impl Classifier {
             asn: self.asn(req),
             agent: req.headers().get(USER_AGENT).and_then(|h| h.to_str().ok()),
             decision: Decision::Valid(ValidReason::Default),
+            resource_type: resource_type(req),
         };
 
         if let Some(path) = self.trusted_path(req) {
@@ -226,6 +229,48 @@ fn match_agent<'r>(matcher: Option<&Matcher>, header_value: Option<&'r str>) -> 
     None
 }
 
+fn resource_type<B>(req: &Request<B>) -> ResourceType {
+    let path = req.uri().path();
+    if path == FETCH_PATH {
+        return ResourceType::Fetch;
+    }
+    match http_path_extname(path) {
+        Some("css") => ResourceType::CSS,
+        Some("js") => ResourceType::JavaScript,
+        Some("html") | Some("htm") | None => ResourceType::HTML,
+        _ => ResourceType::HTML,
+    }
+}
+
+#[derive(Copy, Clone, Debug, Default)]
+pub enum ResourceType {
+    #[default]
+    HTML,
+    CSS,
+    JavaScript,
+    Fetch,
+}
+
+impl ResourceType {
+    pub const fn to_str(self) -> &'static str {
+        match self {
+            ResourceType::HTML => "html",
+            ResourceType::CSS => "css",
+            ResourceType::JavaScript => "js",
+            ResourceType::Fetch => "fetch",
+        }
+    }
+
+    pub const fn to_compact_string(self) -> CompactString {
+        match self {
+            ResourceType::HTML => CompactString::const_new("html"),
+            ResourceType::CSS => CompactString::const_new("css"),
+            ResourceType::JavaScript => CompactString::const_new("js"),
+            ResourceType::Fetch => CompactString::const_new("fetch"),
+        }
+    }
+}
+
 #[derive(Debug, Default)]
 pub struct Classification<'a> {
     pub host: Option<&'a str>,
@@ -234,6 +279,7 @@ pub struct Classification<'a> {
     pub asn: Option<u32>,
     pub poison: Option<&'a str>,
     pub decision: Decision<'a>,
+    pub resource_type: ResourceType,
 }
 
 #[derive(Debug)]

@@ -2,4 +2,6 @@ mod classifier;
 mod matcher;
 mod robots_json;
 
-pub use classifier::{Classification, Classifier, Decision, SpamReason, ValidReason};
+pub use classifier::{
+    Classification, Classifier, Decision, FETCH_PATH, ResourceType, SpamReason, ValidReason,
+};
