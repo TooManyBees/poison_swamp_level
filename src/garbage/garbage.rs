@@ -144,6 +144,9 @@ impl Garbage {
     }
 
     pub fn render(&self, path: &str) -> String {
+        if path == FETCH_PATH {
+            return "".to_string();
+        }
         match http_path_extname(path) {
             Some("css") => return "body { background-color: bisque; }\n".into(),
             Some("js") => return format!("fetch('{FETCH_PATH}');\n").into(),
