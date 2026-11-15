@@ -121,10 +121,7 @@ impl Garbage {
         Value::List(links)
     }
 
-    fn generate_resource_link<R: Rng>(&self, path: &str, ext: &str, rng: &mut R) -> Value {
-        if self.poisons.iter().any(|p| path.contains(p)) {
-            return Value::None;
-        }
+    fn generate_resource_link<R: Rng>(&self, path: &str, rng: &mut R) -> Option<String> {
         if let Some(poison) = self.poisons.choose(rng) {
             let mut link_path = if path.ends_with('/') {
                 format!("{path}{poison}")
@@ -136,10 +133,9 @@ impl Garbage {
                 link_path.push(self.link_separator);
                 link_path.push_str(segment);
             }
-            link_path.push_str(ext);
-            Value::String(link_path)
+            Some(link_path)
         } else {
-            Value::None
+            None
         }
     }
 
@@ -161,10 +157,18 @@ impl Garbage {
             .collect();
 
         let is_poisoned = self.poisons.iter().any(|p| path.contains(p));
-        let links = if !is_poisoned {
-            self.generate_links(path, generator.rng())
+        let (links, link_css, link_js) = if !is_poisoned {
+            let links = self.generate_links(path, generator.rng());
+            let (link_css, link_js) = match self.generate_resource_link(path, generator.rng()) {
+                Some(path) => (
+                    Value::String(format!("{path}.css")),
+                    Value::String(format!("{path}.js")),
+                ),
+                None => (Value::None, Value::None),
+            };
+            (links, link_css, link_js)
         } else {
-            Value::None
+            (Value::None, Value::None, Value::None)
         };
         let title = path
             .trim_end_matches('/')
@@ -176,14 +180,8 @@ impl Garbage {
             ("title".into(), title.into()),
             ("paragraphs".into(), Value::List(paragraphs)),
             ("links".into(), links),
-            (
-                "link_css".into(),
-                self.generate_resource_link(path, ".css", generator.rng()),
-            ),
-            (
-                "link_js".into(),
-                self.generate_resource_link(path, ".js", generator.rng()),
-            ),
+            ("link_css".into(), link_css),
+            ("link_js".into(), link_js),
         ]));
         let renderer = self.template.render_from(&self.engine, &data);
         renderer.to_string().expect("can't render template")
