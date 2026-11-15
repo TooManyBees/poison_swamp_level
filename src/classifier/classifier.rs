@@ -184,7 +184,11 @@ impl Classifier {
             agent: req.headers().get(USER_AGENT).and_then(|h| h.to_str().ok()),
             accept: req.headers().get(ACCEPT).and_then(|h| h.to_str().ok()),
             decision: Decision::Valid(ValidReason::Default),
-            resource_type: resource_type(req),
+            resource_type: req
+                .extensions()
+                .get::<ResourceType>()
+                .copied()
+                .unwrap_or_default(),
         };
 
         if let Some(path) = self.trusted_path(req) {
@@ -231,7 +235,7 @@ fn match_agent<'r>(matcher: Option<&Matcher>, header_value: Option<&'r str>) -> 
     None
 }
 
-fn resource_type<B>(req: &Request<B>) -> ResourceType {
+pub fn resource_type<B>(req: &Request<B>) -> ResourceType {
     let path = req.uri().path();
     if path == FETCH_PATH {
         return ResourceType::Fetch;

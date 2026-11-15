@@ -1,6 +1,5 @@
-use crate::classifier::{Classification, Classifier, Decision};
+use crate::classifier::{Classification, Classifier, Decision, ResourceType, resource_type};
 use crate::garbage::Garbage;
-use crate::http_path_extname;
 use crate::metrics::{Metrics, record_request};
 use http::{
     StatusCode,
@@ -39,22 +38,33 @@ impl PslHandler {
         let path = request_path(&req);
         let body = self.garbage.render(path);
 
-        let content_type = match http_path_extname(path) {
-            Some("css") => "text/css; charset=utf-8",
-            Some("js") => "text/javascript; charset=utf-8",
-            _ => "text/html; charset=utf-8",
-        };
-
         Response::builder()
             .status(StatusCode::OK)
             .header(
                 CACHE_CONTROL,
                 HeaderValue::from_static("private, max-age=604800, immutable"),
             )
-            .header(CONTENT_TYPE, HeaderValue::from_static(content_type))
+            .header(CONTENT_TYPE, content_type(req))
             .body(body)
             .unwrap()
     }
+}
+
+fn content_type<B>(req: &Request<B>) -> HeaderValue {
+    let resource_type = req
+        .extensions()
+        .get::<ResourceType>()
+        .copied()
+        .unwrap_or_default();
+
+    let content_type = match resource_type {
+        ResourceType::CSS => "text/css; charset=utf-8",
+        ResourceType::JavaScript => "text/javascript; charset=utf-8",
+        ResourceType::Fetch => "text/plain; charset=utf-8",
+        ResourceType::HTML => "text/html; charset=utf-8",
+    };
+
+    HeaderValue::from_static(content_type)
 }
 
 impl Service<Request<IncomingBody>> for PslHandler {
@@ -63,9 +73,11 @@ impl Service<Request<IncomingBody>> for PslHandler {
     type Future = ServiceFuture;
 
     fn call(&self, mut req: Request<IncomingBody>) -> Self::Future {
+        let now = Instant::now();
         let client_ip = x_real_ip(&req).or(x_forwarded_for(&req)).or(self.client_ip);
         req.extensions_mut().insert(client_ip);
-        let now = Instant::now();
+        let resource_type = resource_type(&req);
+        req.extensions_mut().insert(resource_type);
         let (classification, resp) = (self.handler)(self, &req);
         let elapsed = now.elapsed().as_millis();
         match classification {

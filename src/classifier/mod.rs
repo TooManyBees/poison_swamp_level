@@ -4,4 +4,5 @@ mod robots_json;
 
 pub use classifier::{
     Classification, Classifier, Decision, FETCH_PATH, ResourceType, SpamReason, ValidReason,
+    resource_type,
 };
