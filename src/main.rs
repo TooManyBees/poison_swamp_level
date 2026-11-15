@@ -5,10 +5,10 @@ use poison_swamp_level::service::{Listener, OptionalListener};
 use poison_swamp_level::{Config, config_path, init_logger};
 use std::io::{self, IsTerminal};
 use std::time::Duration;
+use tokio::signal::ctrl_c;
 use tokio::time::sleep;
 #[cfg(unix)]
 use tokio::{
-    signal::ctrl_c,
     signal::unix::{SignalKind, signal},
     sync::{mpsc, mpsc::Sender},
 };
@@ -31,6 +31,7 @@ async fn main() {
     init_logger(&config);
 
     log::info!("Startup");
+    #[cfg_attr(not(unix), allow(unused_mut))]
     let mut app_config = AppConfig::from_config(config).unwrap_or_else(|e| {
         log::error!("Aborting program: {e}");
         std::process::exit(1);
