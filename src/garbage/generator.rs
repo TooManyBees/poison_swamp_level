@@ -206,7 +206,7 @@ impl<'a, R: Rng> Generator<'a, R> {
     pub fn generate(&mut self, range: RangeInclusive<usize>) -> String {
         let mut output = String::new();
 
-        let num_words = self.rng.random_range(range);
+        let num_words = self.rng.random_range(range.clone());
 
         if num_words > 0 {
             let mut must_capitalize = true;
@@ -233,16 +233,29 @@ impl<'a, R: Rng> Generator<'a, R> {
             }
         }
 
+        // Finish the sentence if it's not finished already.
+        // Try another paragraph length before giving up.
         if !is_ending(&output) {
-            if output
-                .chars()
-                .last()
-                .map(|c| char::is_ascii_punctuation(&c))
-                .unwrap_or(false)
-            {
-                output.pop();
+            for word in self.take(*range.end()) {
+                if whitespace_before_word(&word) && whitespace_after_output(&output) {
+                    output.push(' ');
+                }
+                output.push_str(&word);
+                if is_ending(&output) {
+                    break;
+                }
             }
-            output.push('.');
+            if !is_ending(&output) {
+                if output
+                    .chars()
+                    .last()
+                    .map(|c| char::is_ascii_punctuation(&c))
+                    .unwrap_or(false)
+                {
+                    output.pop();
+                }
+                output.push('.');
+            }
         }
         output
     }
