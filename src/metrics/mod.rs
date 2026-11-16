@@ -247,7 +247,7 @@ pub fn record_request(metrics: &Mutex<Metrics>, c: Classification) {
                     MetricLabel(CompactString::const_new("agent"), CompactString::new(agent)),
                 ]);
             }
-            ValidReason::TrustedDecision => {}
+            ValidReason::TrustedDecision | ValidReason::NonGet => {}
         },
         Decision::Spam(reason) => match reason {
             SpamReason::Poison(_, _) => {

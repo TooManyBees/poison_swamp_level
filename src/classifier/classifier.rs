@@ -5,8 +5,8 @@ use crate::http_path_extname;
 use aho_corasick::BuildError;
 use compact_str::CompactString;
 use http::{
-    Request,
-    header::{ACCEPT, HOST, HeaderName, USER_AGENT},
+    Method, Request,
+    header::{ACCEPT, CONNECTION, HOST, HeaderName, UPGRADE, USER_AGENT},
 };
 use maxminddb::{MaxMindDbError, Reader, geoip2::Asn};
 use std::fmt;
@@ -191,6 +191,11 @@ impl Classifier {
                 .unwrap_or_default(),
         };
 
+        if should_ignore_request(req) {
+            info.decision = Decision::Valid(ValidReason::NonGet);
+            return info;
+        }
+
         if let Some(path) = self.trusted_path(req) {
             info.decision = Decision::Valid(ValidReason::TrustedPath(path));
             return info;
@@ -233,6 +238,29 @@ fn match_agent<'r>(matcher: Option<&Matcher>, header_value: Option<&'r str>) -> 
         }
     }
     None
+}
+
+fn should_ignore_request<'r, B>(req: &'r Request<B>) -> bool {
+    if req.method() != Method::GET {
+        return true;
+    }
+    if req
+        .headers()
+        .get(CONNECTION)
+        .and_then(|v| v.to_str().ok())
+        .map(|v| v.eq_ignore_ascii_case("upgrade"))
+        .unwrap_or(false)
+        && req
+            .headers()
+            .get(UPGRADE)
+            .and_then(|v| v.to_str().ok())
+            .map(|v| v.eq_ignore_ascii_case("websocket"))
+            .unwrap_or(false)
+    {
+        return true;
+    }
+
+    false
 }
 
 pub fn resource_type<B>(req: &Request<B>) -> ResourceType {
@@ -317,6 +345,7 @@ pub enum ValidReason<'a> {
     TrustedPath(&'a str),
     TrustedAgent(&'a str),
     TrustedDecision,
+    NonGet,
 }
 
 #[derive(Debug)]
@@ -335,6 +364,7 @@ impl<'a> fmt::Display for ValidReason<'a> {
             ValidReason::TrustedPath(path) => write!(f, "trusted path {path:?}"),
             ValidReason::TrustedAgent(agent) => write!(f, "trusted agent {agent:?}"),
             ValidReason::TrustedDecision => f.write_str("trusted decision header"),
+            ValidReason::NonGet => f.write_str("non-get http request"),
         }
     }
 }
