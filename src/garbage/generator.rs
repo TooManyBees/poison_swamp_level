@@ -135,7 +135,33 @@ static SENTENCE_ENDINGS: &'static [&'static str] = &[
     ".", "!", "?", ".\"", "!\"", "?\"", ".”", "!”", "?”", ".)", "?)", "!)",
 ];
 
-pub fn is_ending<S: AsRef<str>>(s: S) -> bool {
+pub fn is_ending<S: AsRef<[u8]>>(s: S) -> bool {
+    let bytes = s.as_ref();
+    if bytes.is_empty() {
+        return true;
+    }
+    match bytes[bytes.len() - 1] {
+        b'.' | b'!' | b'?' => return true,
+        b')' | b'"' if bytes.len() >= 2 => match bytes[bytes.len() - 2] {
+            b'.' | b'!' | b'?' => return true,
+            _ => return false,
+        }
+        _ => {}
+    }
+    if let Some(bytes) = bytes.strip_suffix("”".as_bytes()) {
+        if bytes.is_empty() {
+            return false;
+        }
+        match bytes[bytes.len() - 1] {
+            b'.' | b'!' | b'?' => return true,
+            _ => {}
+        }
+    }
+    false
+}
+
+#[allow(unused)]
+pub fn is_ending_old<S: AsRef<str>>(s: S) -> bool {
     let s = s.as_ref().trim();
     if s.is_empty() {
         return true;
