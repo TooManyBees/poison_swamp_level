@@ -145,7 +145,7 @@ pub fn is_ending<S: AsRef<[u8]>>(s: S) -> bool {
         b')' | b'"' if bytes.len() >= 2 => match bytes[bytes.len() - 2] {
             b'.' | b'!' | b'?' => return true,
             _ => return false,
-        }
+        },
         _ => {}
     }
     if let Some(bytes) = bytes.strip_suffix("”".as_bytes()) {
@@ -300,7 +300,11 @@ mod test {
             ("word!”", true),
             ("word”", false),
         ] {
-            assert_eq!(is_ending(case), expected, "assert_eq!(is_ending({case:?}), {expected})");
+            assert_eq!(
+                is_ending(case),
+                expected,
+                "assert_eq!(is_ending({case:?}), {expected})"
+            );
         }
     }
 
