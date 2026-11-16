@@ -1,6 +1,4 @@
-use super::MetricLabel;
 use super::format::{MetricValue, append_metric_label, append_metric_value};
-use compact_str::CompactString;
 use std::sync::LazyLock;
 
 static PAGE_SIZE: LazyLock<i64> =
