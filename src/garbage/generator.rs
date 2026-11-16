@@ -239,6 +239,32 @@ fn capitalized(word: &str) -> Cow<'_, str> {
 
 #[cfg(test)]
 mod test {
+    use super::is_ending;
+
+    #[test]
+    fn is_ending_works() {
+        for (case, expected) in [
+            ("word.", true),
+            ("word?", true),
+            ("word!", true),
+            ("word,", false),
+            ("word.)", true),
+            ("word?)", true),
+            ("word!)", true),
+            ("word)", false),
+            ("word.\"", true),
+            ("word?\"", true),
+            ("word!\"", true),
+            ("word\"", false),
+            ("word.”", true),
+            ("word?”", true),
+            ("word!”", true),
+            ("word”", false),
+        ] {
+            assert_eq!(is_ending(case), expected, "assert_eq!(is_ending({case:?}), {expected})");
+        }
+    }
+
     use super::Corpus;
     // use pretty_assertions::assert_eq;
     use rand_seeder::{Seeder, SipRng};
