@@ -41,8 +41,10 @@ pub fn apply_persisted_metrics(metrics: &mut Metrics, mut persisted: PersistedMe
     extract_persisted_metric(&mut metrics.request_counter, &mut persisted);
     extract_persisted_metric(&mut metrics.classification_spam_counter, &mut persisted);
     extract_persisted_metric(&mut metrics.classification_valid_counter, &mut persisted);
+    extract_persisted_metric(&mut metrics.trusted_agents_counter, &mut persisted);
     extract_persisted_metric(&mut metrics.asn_known_counter, &mut persisted);
     extract_persisted_metric(&mut metrics.asn_hidden_counter, &mut persisted);
+    extract_persisted_metric(&mut metrics.accept_header, &mut persisted);
 }
 
 fn extract_persisted_metric(map: &mut NamedHashMap, persisted: &mut PersistedMetrics) {
@@ -71,8 +73,10 @@ pub fn write_persisted_metrics(path: &str, metrics: &Metrics) -> Result<(), Pers
     metrics_into_persisted(&mut persisted, &metrics.request_counter);
     metrics_into_persisted(&mut persisted, &metrics.classification_spam_counter);
     metrics_into_persisted(&mut persisted, &metrics.classification_valid_counter);
+    metrics_into_persisted(&mut persisted, &metrics.trusted_agents_counter);
     metrics_into_persisted(&mut persisted, &metrics.asn_known_counter);
     metrics_into_persisted(&mut persisted, &metrics.asn_hidden_counter);
+    metrics_into_persisted(&mut persisted, &metrics.accept_header);
 
     let parent_dir = Path::new(path).parent().unwrap_or(Path::new("."));
     let file = tempfile::NamedTempFile::new_in(parent_dir).map_err(PersistenceError::Io)?;
