@@ -1,6 +1,3 @@
 /target
-/*.txt
-/*.json
-/*.mmdb
+/runtime
 /*.kdl
-/*.html
