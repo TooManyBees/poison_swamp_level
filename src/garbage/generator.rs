@@ -205,6 +205,7 @@ impl<'a, R: Rng> Generator<'a, R> {
 
     pub fn generate(&mut self, range: RangeInclusive<usize>) -> String {
         let mut output = String::new();
+        let mut brackets = OpenBrackets::default();
 
         let num_words = self.rng.random_range(range.clone());
 
@@ -215,6 +216,10 @@ impl<'a, R: Rng> Generator<'a, R> {
                 .skip_while(|w| w.starts_with(JOIN_BEFORE))
                 .take(num_words)
             {
+                if brackets.should_skip_word(word) {
+                    continue;
+                }
+
                 must_capitalize = (must_capitalize && is_punct(word)) || is_ending(&output);
                 let word = if must_capitalize {
                     must_capitalize = false;
@@ -237,6 +242,10 @@ impl<'a, R: Rng> Generator<'a, R> {
         // Try another paragraph length before giving up.
         if !is_ending(&output) {
             for word in self.take(*range.end()) {
+                if brackets.should_skip_word(word) {
+                    continue;
+                }
+
                 if whitespace_before_word(&word) && whitespace_after_output(&output) {
                     output.push(' ');
                 }
@@ -256,6 +265,9 @@ impl<'a, R: Rng> Generator<'a, R> {
                 }
                 output.push('.');
             }
+            if let Some(closing_brackets) = brackets.closing() {
+                output.push_str(&closing_brackets);
+            }
         }
         output
     }
@@ -273,6 +285,66 @@ fn capitalized(word: &str) -> Cow<'_, str> {
             .chain(word.chars().skip(1))
             .collect();
         Cow::Owned(new_word)
+    }
+}
+
+#[derive(Default, Debug)]
+struct OpenBrackets {
+    open_paren: bool,
+    open_squote: bool,
+    open_dquote: bool,
+}
+
+impl OpenBrackets {
+    fn should_skip_word(&mut self, word: &str) -> bool {
+        let first = word.chars().nth(0).expect("expected word to not be empty");
+        let last = word.chars().last().expect("expected word to not be empty");
+        match (first, last) {
+            (')', _) | (_, ')') => {
+                if !self.open_paren {
+                    return true;
+                } else {
+                    self.open_paren = false;
+                }
+            }
+            ('”', _) | (_, '”') => {
+                if !self.open_dquote {
+                    return true;
+                } else {
+                    self.open_dquote = false;
+                }
+            }
+            ('’', _) | (_, '’') => {
+                if !self.open_squote {
+                    return true;
+                } else {
+                    self.open_squote = false;
+                }
+            }
+            ('(', _) | (_, '(') => self.open_paren = true,
+            ('“', _) | (_, '“') => self.open_dquote = true,
+            ('‘', _) | (_, '‘') => self.open_squote = true,
+            _ => {}
+        }
+        false
+    }
+
+    fn closing(&self) -> Option<String> {
+        let mut result = String::new();
+        if self.open_squote {
+            result.push('’');
+        }
+        if self.open_dquote {
+            result.push('”');
+        }
+        if self.open_paren {
+            result.push(')');
+        }
+        if result.is_empty() {
+            None
+        } else {
+            Some(result)
+        }
     }
 }
 
