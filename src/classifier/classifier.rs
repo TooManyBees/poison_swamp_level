@@ -128,20 +128,15 @@ impl Classifier {
 
     fn poisoned_path<'r, B>(&self, req: &'r Request<B>) -> Option<&'r str> {
         let path = req.uri().path();
+        if path == FETCH_PATH {
+            return Some("fetch");
+        }
         for poison in &self.poisons {
             if let Some(idx) = path.find(poison) {
                 return Some(&path[idx..idx + poison.len()]);
             }
         }
         None
-    }
-
-    fn poisoned_resource<B>(&self, req: &Request<B>) -> Option<&'static str> {
-        match http_path_extname(req.uri().path()) {
-            Some("css") => Some("css"),
-            Some("js") => Some("js"),
-            _ => None,
-        }
     }
 
     fn lookup_asn(
@@ -222,8 +217,11 @@ impl Classifier {
         }
 
         if let Some(poison) = info.poison {
-            let extension = self.poisoned_resource(req);
-            info.decision = Decision::Spam(SpamReason::Poison(poison, extension));
+            let asset_type = match info.resource_type {
+                ResourceType::HTML => None,
+                other => Some(other),
+            };
+            info.decision = Decision::Spam(SpamReason::Poison(poison, asset_type));
             return info;
         }
 
@@ -350,7 +348,7 @@ pub enum ValidReason<'a> {
 
 #[derive(Debug)]
 pub enum SpamReason<'a> {
-    Poison(&'a str, Option<&'static str>),
+    Poison(&'a str, Option<ResourceType>),
     UnwantedASN(u32),
     UnwantedAgent(&'a str),
     TrustedDecision,

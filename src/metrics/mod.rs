@@ -27,6 +27,7 @@ pub struct Metrics {
     asn_known_counter: NamedHashMap,
     asn_hidden_counter: NamedHashMap,
     accept_header: NamedHashMap,
+    poisoned_assets_counter: NamedHashMap,
 
     persist_path: Option<String>,
     output_buffer: String,
@@ -131,6 +132,22 @@ impl Metrics {
             .fetch_add(1, Ordering::Release);
     }
 
+    fn increment_poisoned_assets(&mut self, resource_type: ResourceType) {
+        let type_label = MetricLabel(
+            CompactString::const_new("type"),
+            resource_type.to_compact_string(),
+        );
+        let key = MetricKey {
+            name: self.poisoned_assets_counter.name.clone(),
+            labels: vec![type_label],
+        };
+
+        self.poisoned_assets_counter
+            .entry(key)
+            .or_insert(AtomicU64::new(0))
+            .fetch_add(1, Ordering::Release);
+    }
+
     pub fn to_prometheus(&mut self) -> String {
         let mut output_buffer = take(&mut self.output_buffer);
         output_buffer.clear();
@@ -142,6 +159,7 @@ impl Metrics {
         append_metric(&mut output_buffer, &self.asn_known_counter);
         append_metric(&mut output_buffer, &self.asn_hidden_counter);
         append_metric(&mut output_buffer, &self.accept_header);
+        append_metric(&mut output_buffer, &self.poisoned_assets_counter);
 
         #[cfg(target_os = "linux")]
         append_procfs_metrics(&mut output_buffer);
@@ -178,6 +196,7 @@ pub fn init_metrics(config: &Config) -> Arc<Mutex<Metrics>> {
         asn_known_counter: NamedHashMap::new("asns_known", "ASNs whence originate spam"),
         asn_hidden_counter: NamedHashMap::new("asns_hidden", "ASNs hiding spam"),
         accept_header: NamedHashMap::new("accept_header", "Accept headers by MIME types"),
+        poisoned_assets_counter: NamedHashMap::new("poisoned_assets", "Poison requests by linked asset type"),
         persist_path: None,
         output_buffer: String::new(),
     };
@@ -250,13 +269,16 @@ pub fn record_request(metrics: &Mutex<Metrics>, c: Classification) {
             ValidReason::TrustedDecision | ValidReason::NonGet => {}
         },
         Decision::Spam(reason) => match reason {
-            SpamReason::Poison(_, _) => {
+            SpamReason::Poison(_poison, asset_type) => {
                 labels.push(MetricLabel(
                     CompactString::const_new("reason"),
                     CompactString::const_new("poison"),
                 ));
                 metrics.increment_classification_spam(labels);
                 metrics.increment_accept(c.resource_type, c.accept);
+                if let Some(asset_type) = asset_type {
+                    metrics.increment_poisoned_assets(asset_type);
+                }
                 if let Some(asn) = c.asn {
                     metrics.increment_asn_hidden(asn);
                 }
